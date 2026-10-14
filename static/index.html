@@ -116,79 +116,103 @@
     });
 
     btnConnect.onclick = async () => {
+      if (btnConnect.disabled) return;
+      btnConnect.disabled = true;
+
       if (ws) {
         ws.close();
         return;
       }
 
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-      await audioCtx.resume();
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        await audioCtx.resume();
 
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${location.host}/ws/audio`);
-      ws.binaryType = 'arraybuffer';
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${location.host}/ws/audio`);
+        ws.binaryType = 'arraybuffer';
 
-      ws.onopen = async () => {
-        await setWakeLock(true);
-        statusText.innerText = "Conectado. Inicializando áudio...";
-        btnConnect.innerText = "Desconectar";
-        btnConnect.style.backgroundColor = "#E53E3E";
-        btnConnect.style.color = "#FFF";
-        await iniciarMicrofone();
-      };
-
-      ws.onmessage = async (event) => {
-        if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
-          abortAudioQueue();
-          return;
-        }
-
-        orb.className = "orb falando";
-        statusText.innerText = "Sofia falando...";
-
-        const pcm16 = new Int16Array(event.data);
-        const float32 = new Float32Array(pcm16.length);
-        for (let i = 0; i < pcm16.length; i++) {
-          float32[i] = pcm16[i] / 32768.0;
-        }
-
-        const audioBuffer = audioCtx.createBuffer(1, float32.length, 24000);
-        audioBuffer.copyToChannel(float32, 0);
-
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        activeSources.push(source);
-
-        source.onended = () => {
-          activeSources = activeSources.filter(activeSource => activeSource !== source);
-          if (audioCtx.currentTime >= nextStartTime - 0.05) {
-            orb.className = "orb";
-            statusText.innerText = "Ouvindo...";
+        ws.onopen = async () => {
+          try {
+            await setWakeLock(true);
+            statusText.innerText = "Conectado. Inicializando áudio...";
+            btnConnect.innerText = "Desconectar";
+            btnConnect.style.backgroundColor = "#E53E3E";
+            btnConnect.style.color = "#FFF";
+            await iniciarMicrofone();
+            btnConnect.disabled = false;
+          } catch (error) {
+            console.error('Não foi possível iniciar o microfone:', error);
+            statusText.innerText = "Não foi possível acessar o microfone";
+            ws.close();
           }
         };
 
-        const currentTime = audioCtx.currentTime;
-        if (nextStartTime < currentTime) nextStartTime = currentTime;
-        source.start(nextStartTime);
-        nextStartTime += audioBuffer.duration;
-      };
+        ws.onmessage = async (event) => {
+          if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
+            abortAudioQueue();
+            return;
+          }
 
-      ws.onclose = () => {
-        setWakeLock(false);
-        statusText.innerText = "Desconectado";
-        btnConnect.innerText = "Conectar";
-        btnConnect.style.backgroundColor = "#04D361";
-        btnConnect.style.color = "#000";
-        orb.className = "orb";
-        pararMicrofone();
+          orb.className = "orb falando";
+          statusText.innerText = "Sofia falando...";
+
+          const pcm16 = new Int16Array(event.data);
+          const float32 = new Float32Array(pcm16.length);
+          for (let i = 0; i < pcm16.length; i++) {
+            float32[i] = pcm16[i] / 32768.0;
+          }
+
+          const audioBuffer = audioCtx.createBuffer(1, float32.length, 24000);
+          audioBuffer.copyToChannel(float32, 0);
+
+          const source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioCtx.destination);
+          activeSources.push(source);
+
+          source.onended = () => {
+            activeSources = activeSources.filter(activeSource => activeSource !== source);
+            if (audioCtx.currentTime >= nextStartTime - 0.05) {
+              orb.className = "orb";
+              statusText.innerText = "Ouvindo...";
+            }
+          };
+
+          const currentTime = audioCtx.currentTime;
+          if (nextStartTime < currentTime) nextStartTime = currentTime;
+          source.start(nextStartTime);
+          nextStartTime += audioBuffer.duration;
+        };
+
+        ws.onclose = () => {
+          setWakeLock(false);
+          statusText.innerText = "Desconectado";
+          btnConnect.innerText = "Conectar";
+          btnConnect.style.backgroundColor = "#04D361";
+          btnConnect.style.color = "#000";
+          btnConnect.disabled = false;
+          orb.className = "orb";
+          pararMicrofone();
+          ws = null;
+        };
+      } catch (error) {
+        console.error('Não foi possível conectar:', error);
+        statusText.innerText = "Não foi possível conectar";
+        btnConnect.disabled = false;
         ws = null;
-      };
+      }
     };
 
     async function iniciarMicrofone() {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
       const micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });

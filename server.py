@@ -29,6 +29,7 @@ def inicializar_banco():
 
 
 def salvar_memoria(papel: str, conteudo: str):
+    print(f"[Memória SQLite] Gravando {papel}: {conteudo}")
     with closing(sqlite3.connect(DB_PATH)) as conexao:
         with conexao:
             conexao.execute(
@@ -44,12 +45,20 @@ def carregar_contexto_recente(limite: int = 6):
             (max(0, limite),),
         ).fetchall()
 
+    print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}")
     if not registros:
         return ""
 
     linhas = ["Histórico recente da conversa:"]
     linhas.extend(f"{papel}: {conteudo}" for papel, conteudo in reversed(registros))
     return "\n".join(linhas)
+
+
+async def salvar_memoria_em_background(papel: str, conteudo: str):
+    try:
+        await asyncio.to_thread(salvar_memoria, papel, conteudo)
+    except Exception as e:
+        print(f"[Memória SQLite] Erro ao gravar registro: {e}")
 
 
 inicializar_banco()
@@ -147,23 +156,30 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         async for response in session.receive():
                             server_content = response.server_content
                             if server_content is not None:
+                                textos_para_salvar = {}
                                 input_transcription = server_content.input_transcription
                                 if input_transcription and input_transcription.text and input_transcription.finished is not False:
-                                    await asyncio.to_thread(
-                                        salvar_memoria, "Fabio", input_transcription.text
-                                    )
+                                    textos_para_salvar[("Fabio", input_transcription.text)] = None
 
                                 output_transcription = server_content.output_transcription
                                 if output_transcription and output_transcription.text and output_transcription.finished is not False:
-                                    await asyncio.to_thread(
-                                        salvar_memoria, "Sofia", output_transcription.text
+                                    textos_para_salvar[("Sofia", output_transcription.text)] = None
+
+                                model_turn = server_content.model_turn
+                                if model_turn is not None:
+                                    for part in model_turn.parts:
+                                        if part.text:
+                                            textos_para_salvar[("Sofia", part.text)] = None
+
+                                for papel, conteudo in textos_para_salvar:
+                                    asyncio.create_task(
+                                        salvar_memoria_em_background(papel, conteudo)
                                     )
 
                                 if server_content.interrupted:
                                     print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...")
                                     await websocket.send_text("INTERRUPT")
 
-                                model_turn = server_content.model_turn
                                 if model_turn is not None:
                                     for part in model_turn.parts:
                                         if part.inline_data and part.inline_data.data:
