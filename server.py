@@ -1,5 +1,7 @@
 import os
 import asyncio
+import sqlite3
+from contextlib import closing
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +12,47 @@ from google.genai import types
 load_dotenv()
 
 app = FastAPI(title="Sofia Voice Server")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memoria_sofia.db")
+
+
+def inicializar_banco():
+    with closing(sqlite3.connect(DB_PATH)) as conexao:
+        with conexao:
+            conexao.execute(
+                """CREATE TABLE IF NOT EXISTS historico (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    papel TEXT NOT NULL,
+                    conteudo TEXT NOT NULL
+                )"""
+            )
+
+
+def salvar_memoria(papel: str, conteudo: str):
+    with closing(sqlite3.connect(DB_PATH)) as conexao:
+        with conexao:
+            conexao.execute(
+                "INSERT INTO historico (papel, conteudo) VALUES (?, ?)",
+                (papel, conteudo),
+            )
+
+
+def carregar_contexto_recente(limite: int = 6):
+    with closing(sqlite3.connect(DB_PATH)) as conexao:
+        registros = conexao.execute(
+            "SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT ?",
+            (max(0, limite),),
+        ).fetchall()
+
+    if not registros:
+        return ""
+
+    linhas = ["Histórico recente da conversa:"]
+    linhas.extend(f"{papel}: {conteudo}" for papel, conteudo in reversed(registros))
+    return "\n".join(linhas)
+
+
+inicializar_banco()
 
 # Serve a pasta static e o index.html na raiz
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -17,6 +60,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 async def get_index():
     return FileResponse("static/index.html")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "online", "agente": "Sofia"}
+
 
 # Inicialização do cliente Gemini
 client = genai.Client()
@@ -45,27 +94,33 @@ prompt_sistema = (
     "- Ao se despedir, seja breve, calma e volte ao modo de espera."
 )
 
-config_live = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Kore"
-            )
-        )
-    ),
-    system_instruction=types.Content(
-        parts=[types.Part.from_text(text=prompt_sistema)]
-    ),
-)
-
-
 @app.websocket("/ws/audio")
 async def websocket_audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("\n📱 [Celular] Conectado ao WebSocket!")
 
     try:
+        contexto_recente = await asyncio.to_thread(carregar_contexto_recente)
+        prompt_com_contexto = prompt_sistema
+        if contexto_recente:
+            prompt_com_contexto += f"\n\n{contexto_recente}"
+
+        config_live = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name="Kore"
+                    )
+                )
+            ),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            system_instruction=types.Content(
+                parts=[types.Part.from_text(text=prompt_com_contexto)]
+            ),
+        )
+
         async with client.aio.live.connect(model=MODEL_ID, config=config_live) as session:
             print("🤖 [Gemini] Sessão Live conectada com sucesso.")
 
@@ -86,12 +141,24 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     print(f"⚠️ [Erro na entrada do celular]: {e}")
 
             async def gemini_to_client():
-                """Recebe as respostas em áudio PCM 24kHz do Gemini e envia de volta ao celular."""
+                """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
                 try:
                     while True:
                         async for response in session.receive():
                             server_content = response.server_content
                             if server_content is not None:
+                                input_transcription = server_content.input_transcription
+                                if input_transcription and input_transcription.text and input_transcription.finished is not False:
+                                    await asyncio.to_thread(
+                                        salvar_memoria, "Fabio", input_transcription.text
+                                    )
+
+                                output_transcription = server_content.output_transcription
+                                if output_transcription and output_transcription.text and output_transcription.finished is not False:
+                                    await asyncio.to_thread(
+                                        salvar_memoria, "Sofia", output_transcription.text
+                                    )
+
                                 if server_content.interrupted:
                                     print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...")
                                     await websocket.send_text("INTERRUPT")
