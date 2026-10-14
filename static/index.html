@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Sofia - Voz em Tempo Real</title>
+  <style>
+    body {
+      margin: 0; background-color: #121214; color: #E1E1E6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+      height: 100vh; touch-action: manipulation;
+    }
+    header { margin-top: 30px; text-align: center; }
+    h1 { margin: 0; font-size: 24px; color: #FFF; }
+    p#status { margin-top: 8px; font-size: 14px; color: #A8A8B3; }
+
+    .orb-container {
+      display: flex; align-items: center; justify-content: center; flex: 1;
+    }
+    .orb {
+      width: 140px; height: 140px; border-radius: 50%;
+      background: radial-gradient(circle, #4a5568, #1a202c);
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      transition: all 0.3s ease;
+    }
+    .orb.ouvindo { background: radial-gradient(circle, #3182ce, #1a365d); box-shadow: 0 0 30px #3182ce; transform: scale(1.05); }
+    .orb.falando { background: radial-gradient(circle, #9f7aea, #553c9a); box-shadow: 0 0 35px #9f7aea; transform: scale(1.1); }
+
+    .controls {
+      margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; gap: 15px; width: 90%;
+    }
+    .btn {
+      width: 100%; max-width: 320px; padding: 16px; border: none; border-radius: 12px;
+      font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s;
+    }
+    .btn-connect { background-color: #04D361; color: #000; }
+    .btn-ptt { background-color: #202024; color: #FFF; border: 2px solid #323238; display: none; }
+    .btn-ptt.active { background-color: #E53E3E; border-color: #E53E3E; }
+    
+    .mode-switch { font-size: 14px; color: #A8A8B3; display: flex; gap: 10px; align-items: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sofia</h1>
+    <p id="status">Desconectado</p>
+  </header>
+
+  <div class="orb-container">
+    <div id="orb" class="orb"></div>
+  </div>
+
+  <div class="controls">
+    <div class="mode-switch">
+      <label><input type="radio" name="mode" value="handsfree" checked> Mãos-Livres</label>
+      <label><input type="radio" name="mode" value="ptt"> Push-to-Talk</label>
+    </div>
+    <button id="btnConnect" class="btn btn-connect">Conectar</button>
+    <button id="btnPtt" class="btn btn-ptt">Segure para Falar</button>
+  </div>
+
+  <script>
+    let ws, audioCtx, micStream, processor;
+    let isPttActive = false;
+    let nextStartTime = 0;
+    let activeSources = [];
+    let wakeLock = null;
+
+    function abortAudioQueue() {
+      activeSources.forEach(source => source.stop());
+      activeSources = [];
+      nextStartTime = audioCtx.currentTime;
+    }
+
+    async function setWakeLock(active) {
+      if (!('wakeLock' in navigator)) return;
+
+      try {
+        if (active && !wakeLock) {
+          const lock = await navigator.wakeLock.request('screen');
+          wakeLock = lock;
+          lock.addEventListener('release', () => {
+            if (wakeLock === lock) wakeLock = null;
+          }, { once: true });
+        } else if (!active && wakeLock) {
+          const lock = wakeLock;
+          wakeLock = null;
+          await lock.release();
+        }
+      } catch (error) {
+        console.warn('Não foi possível atualizar o Wake Lock:', error);
+      }
+    }
+
+    const orb = document.getElementById('orb');
+    const statusText = document.getElementById('status');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnPtt = document.getElementById('btnPtt');
+    const modeRadios = document.querySelectorAll('input[name="mode"]');
+
+    function getSelectedMode() {
+      return document.querySelector('input[name="mode"]:checked').value;
+    }
+
+    modeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        btnPtt.style.display = getSelectedMode() === 'ptt' ? 'block' : 'none';
+      });
+    });
+
+    btnConnect.onclick = async () => {
+      if (ws) {
+        ws.close();
+        return;
+      }
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      await audioCtx.resume();
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws/audio`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = async () => {
+        await setWakeLock(true);
+        statusText.innerText = "Conectado. Inicializando áudio...";
+        btnConnect.innerText = "Desconectar";
+        btnConnect.style.backgroundColor = "#E53E3E";
+        btnConnect.style.color = "#FFF";
+        await iniciarMicrofone();
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
+          abortAudioQueue();
+          return;
+        }
+
+        orb.className = "orb falando";
+        statusText.innerText = "Sofia falando...";
+
+        const pcm16 = new Int16Array(event.data);
+        const float32 = new Float32Array(pcm16.length);
+        for (let i = 0; i < pcm16.length; i++) {
+          float32[i] = pcm16[i] / 32768.0;
+        }
+
+        const audioBuffer = audioCtx.createBuffer(1, float32.length, 24000);
+        audioBuffer.copyToChannel(float32, 0);
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        activeSources.push(source);
+
+        source.onended = () => {
+          activeSources = activeSources.filter(activeSource => activeSource !== source);
+          if (audioCtx.currentTime >= nextStartTime - 0.05) {
+            orb.className = "orb";
+            statusText.innerText = "Ouvindo...";
+          }
+        };
+
+        const currentTime = audioCtx.currentTime;
+        if (nextStartTime < currentTime) nextStartTime = currentTime;
+        source.start(nextStartTime);
+        nextStartTime += audioBuffer.duration;
+      };
+
+      ws.onclose = () => {
+        setWakeLock(false);
+        statusText.innerText = "Desconectado";
+        btnConnect.innerText = "Conectar";
+        btnConnect.style.backgroundColor = "#04D361";
+        btnConnect.style.color = "#000";
+        orb.className = "orb";
+        pararMicrofone();
+        ws = null;
+      };
+    };
+
+    async function iniciarMicrofone() {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+      });
+
+      const micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const source = micCtx.createMediaStreamSource(micStream);
+      processor = micCtx.createScriptProcessor(2048, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        
+        const mode = getSelectedMode();
+        if (mode === 'ptt' && !isPttActive) return;
+
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          let s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        ws.send(pcm16.buffer);
+      };
+
+      source.connect(processor);
+      processor.connect(micCtx.destination);
+      statusText.innerText = "Pronto! Pode falar com a Sofia.";
+    }
+
+    function pararMicrofone() {
+      if (micStream) micStream.getTracks().forEach(t => t.stop());
+      if (processor) processor.disconnect();
+    }
+
+    btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); isPttActive = true; btnPtt.classList.add('active'); orb.className = 'orb ouvindo'; });
+    btnPtt.addEventListener('touchend', (e) => { e.preventDefault(); isPttActive = false; btnPtt.classList.remove('active'); orb.className = 'orb'; });
+    btnPtt.addEventListener('mousedown', () => { isPttActive = true; btnPtt.classList.add('active'); orb.className = 'orb ouvindo'; });
+    btnPtt.addEventListener('mouseup', () => { isPttActive = false; btnPtt.classList.remove('active'); orb.className = 'orb'; });
+  </script>
+</body>
+</html>
