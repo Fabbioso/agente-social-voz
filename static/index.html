@@ -8,54 +8,223 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon.svg">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#0a0a0f">
   <title>Sofia - Voz em Tempo Real</title>
   <style>
-    body {
-      margin: 0; background-color: #121214; color: #E1E1E6;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-      height: 100vh; touch-action: manipulation;
+    :root {
+      color-scheme: dark;
+      --text-primary: #f4f2f8;
+      --text-muted: #9895a3;
+      --surface: rgba(255, 255, 255, 0.055);
     }
-    header { margin-top: 30px; text-align: center; }
-    h1 { margin: 0; font-size: 24px; color: #FFF; }
-    p#status { margin-top: 8px; font-size: 14px; color: #A8A8B3; }
+
+    * { box-sizing: border-box; }
+
+    body {
+      height: 100vh;
+      height: 100dvh;
+      min-height: 420px;
+      margin: 0;
+      padding: max(28px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-primary);
+      background:
+        radial-gradient(ellipse at 50% 46%, rgba(62, 38, 75, 0.16), transparent 42%),
+        radial-gradient(ellipse at center, #111117 0%, #0a0a0f 72%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      touch-action: manipulation;
+    }
+
+    header { display: grid; justify-items: center; gap: 12px; }
+    h1 { margin: 0; font-size: 25px; line-height: 1.2; font-weight: 550; color: #fff; }
+
+    #status {
+      min-height: 30px;
+      margin: 0;
+      padding: 6px 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    #status::before {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 7px;
+      content: "";
+      border-radius: 50%;
+      background: #74717d;
+      box-shadow: 0 0 8px rgba(116, 113, 125, 0.35);
+    }
+    #status[data-state="connecting"]::before { background: #f5b942; box-shadow: 0 0 10px rgba(245, 185, 66, 0.7); }
+    #status[data-state="ready"]::before { background: #34d399; box-shadow: 0 0 11px rgba(52, 211, 153, 0.8); }
+    #status[data-state="speaking"]::before {
+      background: #c4a7ff;
+      box-shadow: 0 0 12px rgba(196, 167, 255, 0.9);
+      animation: status-pulse 1.2s ease-in-out infinite;
+    }
 
     .orb-container {
-      display: flex; align-items: center; justify-content: center; flex: 1;
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .orb {
-      width: 140px; height: 140px; border-radius: 50%;
-      background: radial-gradient(circle, #4a5568, #1a202c);
-      box-shadow: 0 0 20px rgba(0,0,0,0.5);
-      transition: all 0.3s ease;
+      width: clamp(180px, 46vw, 240px);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background:
+        radial-gradient(ellipse at 34% 27%, rgba(255, 224, 184, 0.9) 0%, transparent 20%),
+        radial-gradient(ellipse at 32% 35%, #ffb26b 0%, #ff7b54 24%, transparent 57%),
+        radial-gradient(ellipse at 70% 70%, #342a91 0%, #172a70 29%, transparent 61%),
+        radial-gradient(ellipse at 63% 35%, #9333ea 0%, transparent 55%),
+        #17142e;
+      box-shadow: 0 0 48px rgba(147, 51, 234, 0.2), 0 0 80px rgba(255, 123, 84, 0.12), inset -12px -16px 34px rgba(5, 8, 28, 0.5);
+      transform: scale(1);
+      transition: transform 350ms ease, box-shadow 500ms ease, filter 500ms ease;
+      animation: orb-breathe 5s ease-in-out infinite;
+      will-change: transform, filter;
     }
-    .orb.ouvindo { background: radial-gradient(circle, #3182ce, #1a365d); box-shadow: 0 0 30px #3182ce; transform: scale(1.05); }
-    .orb.captando { background: radial-gradient(circle, #38b2ac, #234e52); animation: captando 0.7s ease-in-out infinite alternate; }
-    .orb.falando { background: radial-gradient(circle, #9f7aea, #553c9a); box-shadow: 0 0 35px #9f7aea; transform: scale(1.1); }
-    @keyframes captando {
-      from { box-shadow: 0 0 20px #38b2ac; transform: scale(1.02); }
-      to { box-shadow: 0 0 38px #38b2ac; transform: scale(1.1); }
+    .orb.ouvindo {
+      animation: none;
+      transform: scale(1.035);
+      filter: brightness(1.08);
+      box-shadow: 0 0 56px rgba(75, 132, 255, 0.27), 0 0 88px rgba(147, 51, 234, 0.18), inset -12px -16px 34px rgba(5, 8, 28, 0.4);
+    }
+    .orb.captando {
+      animation: none;
+      transform: scale(1.02);
+      box-shadow: 0 0 calc(34px + var(--voice-glow, 0px)) rgba(73, 180, 255, 0.4), 0 0 76px rgba(147, 51, 234, 0.22), inset -12px -16px 34px rgba(5, 8, 28, 0.4);
+    }
+    .orb.falando {
+      animation: orb-speaking 1.8s ease-in-out infinite;
+      box-shadow: 0 0 68px rgba(196, 143, 255, 0.4), 0 0 118px rgba(255, 123, 84, 0.2), inset -12px -16px 34px rgba(5, 8, 28, 0.35);
+      filter: brightness(1.12) saturate(1.1);
     }
 
     .controls {
-      margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; gap: 15px; width: 90%;
+      width: min(100%, 360px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 4px;
     }
+    .mode-switch {
+      width: 100%;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.075);
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--text-muted);
+      font-size: 13px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .mode-switch label {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      padding: 11px 8px;
+      border-radius: 9999px;
+      text-align: center;
+      cursor: pointer;
+      transition: background 220ms ease, color 220ms ease, box-shadow 220ms ease;
+    }
+    .mode-switch input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+    .mode-switch label:has(input:checked) {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 2px 8px rgba(0, 0, 0, 0.18);
+    }
+    .mode-switch label:has(input:focus-visible) { outline: 2px solid #c4a7ff; outline-offset: 2px; }
+
     .btn {
-      width: 100%; max-width: 320px; padding: 16px; border: none; border-radius: 12px;
-      font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s;
+      width: 100%;
+      min-height: 56px;
+      padding: 16px 24px;
+      border: 1px solid transparent;
+      border-radius: 9999px;
+      color: #fff;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 160ms ease, filter 200ms ease, box-shadow 200ms ease;
+      -webkit-tap-highlight-color: transparent;
     }
-    .btn-connect { background-color: #04D361; color: #000; }
-    .btn-ptt { background-color: #202024; color: #FFF; border: 2px solid #323238; display: none; }
-    .btn-ptt.active { background-color: #E53E3E; border-color: #E53E3E; }
-    
-    .mode-switch { font-size: 14px; color: #A8A8B3; display: flex; gap: 10px; align-items: center; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { cursor: wait; filter: saturate(0.7); opacity: 0.78; }
+    .btn-connect {
+      background: linear-gradient(110deg, #168b70, #22a88d 55%, #38b6a1);
+      box-shadow: 0 8px 28px rgba(28, 166, 136, 0.22), inset 0 1px rgba(255, 255, 255, 0.18);
+    }
+    .btn-connect:hover { filter: brightness(1.08); box-shadow: 0 10px 34px rgba(28, 166, 136, 0.3); }
+    .btn-connect.is-connected {
+      background: linear-gradient(110deg, #702f3e, #a33e4d 58%, #b84c57);
+      box-shadow: 0 8px 28px rgba(163, 62, 77, 0.22), inset 0 1px rgba(255, 255, 255, 0.14);
+    }
+    .btn-ptt {
+      display: none;
+      background: rgba(255, 255, 255, 0.075);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #f2eff8;
+      user-select: none;
+      touch-action: none;
+    }
+    .btn-ptt.active {
+      background: linear-gradient(110deg, #843849, #b34855);
+      border-color: rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 26px rgba(179, 72, 85, 0.25);
+    }
+
+    @keyframes orb-breathe {
+      0%, 100% { transform: scale(0.98); }
+      50% { transform: scale(1.025); }
+    }
+    @keyframes orb-speaking {
+      0%, 100% { transform: scale(1.035); }
+      50% { transform: scale(1.09); }
+    }
+    @keyframes status-pulse {
+      0%, 100% { opacity: 0.72; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+
+    @media (max-height: 620px) {
+      body { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+      .orb { width: clamp(150px, 38vh, 210px); }
+      .controls { gap: 10px; }
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Sofia</h1>
-    <p id="status">Desconectado</p>
+    <p id="status" data-state="disconnected">Desconectado</p>
   </header>
 
   <div class="orb-container">
@@ -64,8 +233,8 @@
 
   <div class="controls">
     <div class="mode-switch">
-      <label><input type="radio" name="mode" value="handsfree" checked> Mãos-Livres</label>
-      <label><input type="radio" name="mode" value="ptt"> Push-to-Talk</label>
+      <label><input type="radio" name="mode" value="handsfree" checked><span>Mãos-Livres</span></label>
+      <label><input type="radio" name="mode" value="ptt"><span>Push-to-Talk</span></label>
     </div>
     <button id="btnConnect" class="btn btn-connect">Conectar</button>
     <button id="btnPtt" class="btn btn-ptt">Segure para Falar</button>
@@ -80,8 +249,13 @@
     let wakeLock = null;
 
     function abortAudioQueue() {
-      activeSources.forEach(source => source.stop());
+      const pendingSources = activeSources;
+      activeSources = [];
+      isAiPlaying = false;
       nextStartTime = audioCtx.currentTime;
+      pendingSources.forEach(source => source.stop());
+      orb.className = "orb";
+      statusText.innerText = "Ouvindo...";
     }
 
     async function setWakeLock(active) {
@@ -109,6 +283,16 @@
     const btnConnect = document.getElementById('btnConnect');
     const btnPtt = document.getElementById('btnPtt');
     const modeRadios = document.querySelectorAll('input[name="mode"]');
+
+    const statusObserver = new MutationObserver(() => {
+      const message = statusText.innerText.toLowerCase();
+      statusText.dataset.state = message.includes('falando') ? 'speaking'
+        : message.includes('conectando') || message.includes('inicializando') ? 'connecting'
+        : message.includes('desconectado') ? 'disconnected'
+        : message.includes('pront') || message.includes('ouvindo') || message.includes('conectado') ? 'ready'
+        : 'disconnected';
+    });
+    statusObserver.observe(statusText, { childList: true, characterData: true, subtree: true });
 
     function getSelectedMode() {
       return document.querySelector('input[name="mode"]:checked').value;
@@ -142,8 +326,7 @@
             await setWakeLock(true);
             statusText.innerText = "Conectado. Inicializando áudio...";
             btnConnect.innerText = "Desconectar";
-            btnConnect.style.backgroundColor = "#E53E3E";
-            btnConnect.style.color = "#FFF";
+            btnConnect.classList.add('is-connected');
             await iniciarMicrofone();
             btnConnect.disabled = false;
           } catch (error) {
@@ -155,9 +338,7 @@
 
         ws.onmessage = async (event) => {
           if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
-            if (getSelectedMode() === 'ptt' && isPttActive) {
-              abortAudioQueue();
-            }
+            abortAudioQueue();
             return;
           }
 
@@ -198,8 +379,7 @@
           setWakeLock(false);
           statusText.innerText = "Desconectado";
           btnConnect.innerText = "Conectar";
-          btnConnect.style.backgroundColor = "#04D361";
-          btnConnect.style.color = "#000";
+          btnConnect.classList.remove('is-connected');
           btnConnect.disabled = false;
           orb.className = "orb";
           pararMicrofone();
@@ -243,9 +423,11 @@
           }
           const rms = Math.sqrt(sumOfSquares / inputData.length);
           if (rms < 0.005) {
+            orb.style.setProperty('--voice-glow', '0px');
             orb.className = 'orb';
             return;
           }
+          orb.style.setProperty('--voice-glow', `${Math.min(28, rms * 1200)}px`);
           orb.className = 'orb captando';
         }
 
