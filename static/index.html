@@ -69,6 +69,7 @@
   <script>
     let ws, audioCtx, micStream, processor;
     let isPttActive = false;
+    let isAiPlaying = false;
     let nextStartTime = 0;
     let activeSources = [];
     let wakeLock = null;
@@ -77,6 +78,7 @@
       activeSources.forEach(source => source.stop());
       activeSources = [];
       nextStartTime = audioCtx.currentTime;
+      isAiPlaying = false;
     }
 
     async function setWakeLock(active) {
@@ -156,6 +158,7 @@
 
           orb.className = "orb falando";
           statusText.innerText = "Sofia falando...";
+          isAiPlaying = true;
 
           const pcm16 = new Int16Array(event.data);
           const float32 = new Float32Array(pcm16.length);
@@ -173,6 +176,7 @@
 
           source.onended = () => {
             activeSources = activeSources.filter(activeSource => activeSource !== source);
+            if (activeSources.length === 0) isAiPlaying = false;
             if (audioCtx.currentTime >= nextStartTime - 0.05) {
               orb.className = "orb";
               statusText.innerText = "Ouvindo...";
@@ -224,8 +228,18 @@
         
         const mode = getSelectedMode();
         if (mode === 'ptt' && !isPttActive) return;
+        if (mode === 'handsfree' && isAiPlaying) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
+        if (mode === 'handsfree') {
+          let sumOfSquares = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sumOfSquares += inputData[i] * inputData[i];
+          }
+          const rms = Math.sqrt(sumOfSquares / inputData.length);
+          if (rms < 0.015) return;
+        }
+
         const pcm16 = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
           let s = Math.max(-1, Math.min(1, inputData[i]));
