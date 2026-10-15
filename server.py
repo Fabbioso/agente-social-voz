@@ -156,8 +156,12 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
                 try:
+                    pacotes_recebidos = 0
                     while True:
                         data = await websocket.receive_bytes()
+                        pacotes_recebidos += 1
+                        if pacotes_recebidos % 50 == 0:
+                            print(f"🎤 Recebidos {len(data)} bytes de áudio do celular", flush=True)
                         await session.send_realtime_input(
                             media={
                                 "data": data,

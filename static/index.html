@@ -31,7 +31,12 @@
       transition: all 0.3s ease;
     }
     .orb.ouvindo { background: radial-gradient(circle, #3182ce, #1a365d); box-shadow: 0 0 30px #3182ce; transform: scale(1.05); }
+    .orb.captando { background: radial-gradient(circle, #38b2ac, #234e52); animation: captando 0.7s ease-in-out infinite alternate; }
     .orb.falando { background: radial-gradient(circle, #9f7aea, #553c9a); box-shadow: 0 0 35px #9f7aea; transform: scale(1.1); }
+    @keyframes captando {
+      from { box-shadow: 0 0 20px #38b2ac; transform: scale(1.02); }
+      to { box-shadow: 0 0 38px #38b2ac; transform: scale(1.1); }
+    }
 
     .controls {
       margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; gap: 15px; width: 90%;
@@ -237,7 +242,11 @@
             sumOfSquares += inputData[i] * inputData[i];
           }
           const rms = Math.sqrt(sumOfSquares / inputData.length);
-          if (rms < 0.015) return;
+          if (rms < 0.005) {
+            orb.className = 'orb';
+            return;
+          }
+          orb.className = 'orb captando';
         }
 
         const pcm16 = new Int16Array(inputData.length);
