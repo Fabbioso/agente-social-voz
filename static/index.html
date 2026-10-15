@@ -411,9 +411,8 @@
 
       processor.onaudioprocess = (e) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (isAiPlaying === true) return;
-        
         const mode = getSelectedMode();
+        if (mode === 'handsfree' && isAiPlaying) return;
         if (mode === 'ptt' && !isPttActive) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
