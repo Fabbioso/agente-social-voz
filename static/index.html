@@ -338,6 +338,7 @@
 
         ws.onmessage = async (event) => {
           if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
+            isAiPlaying = false;
             abortAudioQueue();
             return;
           }
