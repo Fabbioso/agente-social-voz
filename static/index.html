@@ -81,9 +81,7 @@
 
     function abortAudioQueue() {
       activeSources.forEach(source => source.stop());
-      activeSources = [];
       nextStartTime = audioCtx.currentTime;
-      isAiPlaying = false;
     }
 
     async function setWakeLock(active) {
@@ -157,7 +155,9 @@
 
         ws.onmessage = async (event) => {
           if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
-            abortAudioQueue();
+            if (getSelectedMode() === 'ptt' && isPttActive) {
+              abortAudioQueue();
+            }
             return;
           }
 
@@ -230,10 +230,10 @@
 
       processor.onaudioprocess = (e) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (isAiPlaying === true) return;
         
         const mode = getSelectedMode();
         if (mode === 'ptt' && !isPttActive) return;
-        if (mode === 'handsfree' && isAiPlaying) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
         if (mode === 'handsfree') {
