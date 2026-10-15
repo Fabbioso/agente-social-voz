@@ -168,7 +168,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                 "mime_type": "audio/pcm;rate=16000",
                             }
                         )
-                except (WebSocketDisconnect, asyncio.CancelledError):
+                except asyncio.CancelledError:
+                    raise
+                except WebSocketDisconnect:
                     pass
                 except Exception as e:
                     print(f"⚠️ [Erro na entrada do celular]: {e}")
@@ -222,20 +224,29 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     buffer_sofia_partes = ""
 
                         await asyncio.sleep(0.05)
-                except (WebSocketDisconnect, asyncio.CancelledError):
+                except WebSocketDisconnect:
                     pass
                 except Exception as e:
-                    print(f"⚠️ [Erro na saída para o celular]: {e}")
+                    print(f"❌ Erro na conexão Gemini Live: {e}", flush=True)
+                finally:
+                    print("🔌 Finalizando sessão com o cliente...", flush=True)
+                    if websocket.client_state.name == "CONNECTED":
+                        await websocket.close()
 
-            task_input = asyncio.create_task(client_to_gemini())
-            task_output = asyncio.create_task(gemini_to_client())
-
-            done, pending = await asyncio.wait(
-                [task_input, task_output],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            for t in pending:
-                t.cancel()
+            tasks = [
+                asyncio.create_task(client_to_gemini()),
+                asyncio.create_task(gemini_to_client()),
+            ]
+            try:
+                await asyncio.wait(
+                    tasks,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     except WebSocketDisconnect:
         print("📱 [Celular] Conexão encerrada pelo usuário.")
