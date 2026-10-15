@@ -1,6 +1,7 @@
 import os
 import asyncio
 import sqlite3
+import re
 from contextlib import closing
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -25,6 +26,9 @@ def inicializar_banco():
                     papel TEXT NOT NULL,
                     conteudo TEXT NOT NULL
                 )"""
+            )
+            conexao.execute(
+                "DELETE FROM historico WHERE LENGTH(conteudo) < 4 OR conteudo LIKE '**%'"
             )
 
 
@@ -59,6 +63,22 @@ async def salvar_memoria_em_background(papel: str, conteudo: str):
         await asyncio.to_thread(salvar_memoria, papel, conteudo)
     except Exception as e:
         print(f"[Memória SQLite] Erro ao gravar registro: {e}")
+
+
+def texto_memoria_valido(conteudo: str) -> str:
+    conteudo = conteudo.strip()
+    if conteudo.startswith("**"):
+        return ""
+
+    conteudo = re.sub(
+        r"<(?:think|thought)>.*?</(?:think|thought)>|\*\*.*|"
+        r"\[(?:monólogo interno|internal monologue)\].*?"
+        r"\[/(?:monólogo interno|internal monologue)\]",
+        "",
+        conteudo,
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+    return conteudo if len(conteudo) >= 3 else ""
 
 
 inicializar_banco()
@@ -151,30 +171,32 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
+                buffer_usuario = ""
+                buffer_sofia = ""
+                buffer_sofia_partes = ""
                 try:
                     while True:
                         async for response in session.receive():
                             server_content = response.server_content
                             if server_content is not None:
-                                textos_para_salvar = {}
                                 input_transcription = server_content.input_transcription
-                                if input_transcription and input_transcription.text and input_transcription.finished is not False:
-                                    textos_para_salvar[("Fabio", input_transcription.text)] = None
+                                if input_transcription and input_transcription.text:
+                                    buffer_usuario += input_transcription.text
+                                    if input_transcription.finished is True:
+                                        texto_usuario = texto_memoria_valido(buffer_usuario)
+                                        if texto_usuario:
+                                            await salvar_memoria_em_background("Fabio", texto_usuario)
+                                        buffer_usuario = ""
 
                                 output_transcription = server_content.output_transcription
-                                if output_transcription and output_transcription.text and output_transcription.finished is not False:
-                                    textos_para_salvar[("Sofia", output_transcription.text)] = None
+                                if output_transcription and output_transcription.text:
+                                    buffer_sofia += output_transcription.text
 
                                 model_turn = server_content.model_turn
                                 if model_turn is not None:
                                     for part in model_turn.parts:
-                                        if part.text:
-                                            textos_para_salvar[("Sofia", part.text)] = None
-
-                                for papel, conteudo in textos_para_salvar:
-                                    asyncio.create_task(
-                                        salvar_memoria_em_background(papel, conteudo)
-                                    )
+                                        if part.text and not getattr(part, "thought", False):
+                                            buffer_sofia_partes += part.text
 
                                 if server_content.interrupted:
                                     print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...")
@@ -187,6 +209,13 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                                 if server_content.turn_complete:
                                     print("💬 [Sofia] Turno concluído.")
+                                    texto_sofia = texto_memoria_valido(
+                                        buffer_sofia or buffer_sofia_partes
+                                    )
+                                    if texto_sofia:
+                                        await salvar_memoria_em_background("Sofia", texto_sofia)
+                                    buffer_sofia = ""
+                                    buffer_sofia_partes = ""
 
                         await asyncio.sleep(0.05)
                 except (WebSocketDisconnect, asyncio.CancelledError):
