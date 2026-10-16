@@ -348,10 +348,7 @@
 
           isAiPlaying = true;
           clearTimeout(aiPlaybackTimeout);
-          aiPlaybackTimeout = setTimeout(() => {
-            isAiPlaying = false;
-            aiPlaybackTimeout = null;
-          }, 1500);
+          aiPlaybackTimeout = null;
           orb.className = "orb falando";
           statusText.innerText = "Sofia falando...";
 
@@ -374,9 +371,13 @@
           source.onended = () => {
             activeSources = activeSources.filter(activeSource => activeSource !== source);
             if (activeSources.length === 0) {
-              isAiPlaying = false;
               clearTimeout(aiPlaybackTimeout);
-              aiPlaybackTimeout = null;
+              aiPlaybackTimeout = setTimeout(() => {
+                if (activeSources.length === 0) {
+                  isAiPlaying = false;
+                }
+                aiPlaybackTimeout = null;
+              }, 250);
             }
             if (audioCtx.currentTime >= nextPlayTime - 0.05) {
               orb.className = "orb";
@@ -413,7 +414,7 @@
           channelCount: 1,
           sampleRate: 16000,
           echoCancellation: true,
-          noiseSuppression: false,
+          noiseSuppression: true,
           autoGainControl: true
         }
       });
