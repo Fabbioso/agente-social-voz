@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from google import genai
 from google.genai import types
+from supabase import create_client, Client
 
 FUSO_SP = timezone(timedelta(hours=-3))
 _cache_noticias = {"timestamp": 0, "manchetes": []}
@@ -44,6 +45,16 @@ load_dotenv()
 app = FastAPI(title="Sofia Voice Server")
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memoria_sofia.db")
 
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase_client: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("[Supabase] Conectado com sucesso à nuvem!")
+    except Exception as e:
+        print(f"[Supabase] Erro ao conectar: {e}. Usando SQLite.")
+
 
 def inicializar_banco():
     with closing(sqlite3.connect(DB_PATH)) as conexao:
@@ -61,29 +72,60 @@ def inicializar_banco():
             )
 
 
-def salvar_memoria(papel: str, conteudo: str):
-    print(f"[Memória SQLite] Gravando {papel}: {conteudo}")
+def salvar_mensagem_sqlite(speaker: str, texto: str):
+    print(f"[Memória SQLite] Gravando {speaker}: {texto}")
     with closing(sqlite3.connect(DB_PATH)) as conexao:
         with conexao:
             conexao.execute(
                 "INSERT INTO historico (papel, conteudo) VALUES (?, ?)",
-                (papel, conteudo),
+                (speaker, texto),
             )
 
 
-def carregar_contexto_recente():
+def ler_historico_sqlite(limite: int = 8):
     with closing(sqlite3.connect(DB_PATH)) as conexao:
         cursor = conexao.cursor()
-        cursor.execute("SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT 8")
+        cursor.execute(
+            "SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT ?",
+            (limite,),
+        )
         registros = cursor.fetchall()
 
     print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}")
     return registros[::-1] if registros else []
 
 
-async def salvar_memoria_em_background(papel: str, conteudo: str):
+def ler_historico_recente(limite: int = 8):
+    if supabase_client:
+        try:
+            resp = (
+                supabase_client.table("conversas_sofia")
+                .select("speaker, text")
+                .order("id", desc=True)
+                .limit(limite)
+                .execute()
+            )
+            if resp.data:
+                return [(item["speaker"], item["text"]) for item in reversed(resp.data)]
+        except Exception as e:
+            print(f"[Supabase] Erro na leitura: {e}. Recorrendo ao SQLite.")
+    return ler_historico_sqlite(limite)
+
+
+async def salvar_mensagem_memoria(speaker: str, texto: str):
+    if supabase_client:
+        try:
+            await asyncio.to_thread(
+                lambda: supabase_client.table("conversas_sofia").insert(
+                    {"speaker": speaker, "text": texto}
+                ).execute()
+            )
+            print(f"[Memória Supabase] Gravando {speaker}: {texto[:60]}...")
+            return
+        except Exception as e:
+            print(f"[Supabase] Erro na gravação: {e}. Recorrendo ao SQLite.")
     try:
-        await asyncio.to_thread(salvar_memoria, papel, conteudo)
+        await asyncio.to_thread(salvar_mensagem_sqlite, speaker, texto)
     except Exception as e:
         print(f"[Memória SQLite] Erro ao gravar registro: {e}")
 
@@ -164,7 +206,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             "Apenas esteja ciente do horário sem fazer comentários repetitivos sobre a hora a menos que o Fabio comente."
         )
 
-        historico_lido = await asyncio.to_thread(carregar_contexto_recente)
+        historico_lido = await asyncio.to_thread(ler_historico_recente)
         contexto_memoria = ""
         if historico_lido:
             linhas = [
@@ -249,7 +291,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     if input_transcription.finished is True:
                                         texto_usuario = texto_memoria_valido(buffer_usuario)
                                         if texto_usuario:
-                                            await salvar_memoria_em_background("Fabio", texto_usuario)
+                                            await salvar_mensagem_memoria("Fabio", texto_usuario)
                                         buffer_usuario = ""
 
                                 output_transcription = server_content.output_transcription
@@ -277,7 +319,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                         buffer_sofia or buffer_sofia_partes
                                     )
                                     if texto_sofia:
-                                        await salvar_memoria_em_background("Sofia", texto_sofia)
+                                        await salvar_mensagem_memoria("Sofia", texto_sofia)
                                     buffer_sofia = ""
                                     buffer_sofia_partes = ""
 
