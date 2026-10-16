@@ -98,7 +98,7 @@ async def health():
 
 # Inicialização do cliente Gemini
 client = genai.Client()
-MODEL_ID = "models/gemini-2.0-flash-exp"
+MODEL_ID = "models/gemini-2.5-flash-native-audio-latest"
 
 prompt_sistema = (
     "Você é a Sofia, amiga próxima e confidente de longa data do Fabio.\n\n"
@@ -168,9 +168,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                 "mime_type": "audio/pcm;rate=16000",
                             }
                         )
-                except asyncio.CancelledError:
-                    raise
-                except WebSocketDisconnect:
+                except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
                     print(f"⚠️ [Erro na entrada do celular]: {e}")
@@ -224,29 +222,20 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     buffer_sofia_partes = ""
 
                         await asyncio.sleep(0.05)
-                except WebSocketDisconnect:
+                except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
-                    print(f"❌ Erro na conexão Gemini Live: {e}", flush=True)
-                finally:
-                    print("🔌 Finalizando sessão com o cliente...", flush=True)
-                    if websocket.client_state.name == "CONNECTED":
-                        await websocket.close()
+                    print(f"⚠️ [Erro na saída para o celular]: {e}")
 
-            tasks = [
-                asyncio.create_task(client_to_gemini()),
-                asyncio.create_task(gemini_to_client()),
-            ]
-            try:
-                await asyncio.wait(
-                    tasks,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-            finally:
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+            task_input = asyncio.create_task(client_to_gemini())
+            task_output = asyncio.create_task(gemini_to_client())
+
+            done, pending = await asyncio.wait(
+                [task_input, task_output],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            for t in pending:
+                t.cancel()
 
     except WebSocketDisconnect:
         print("📱 [Celular] Conexão encerrada pelo usuário.")
