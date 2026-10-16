@@ -71,15 +71,14 @@ def salvar_memoria(papel: str, conteudo: str):
             )
 
 
-def carregar_contexto_recente(limite: int = 8):
+def carregar_contexto_recente():
     with closing(sqlite3.connect(DB_PATH)) as conexao:
-        registros = conexao.execute(
-            "SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT ?",
-            (max(0, limite),),
-        ).fetchall()
+        cursor = conexao.cursor()
+        cursor.execute("SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT 8")
+        registros = cursor.fetchall()
 
     print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}")
-    return list(reversed(registros))
+    return registros[::-1] if registros else []
 
 
 async def salvar_memoria_em_background(papel: str, conteudo: str):
@@ -137,6 +136,8 @@ prompt_sistema = (
     "2. Não jogue a responsabilidade da conversa de volta para o Fabio o tempo todo. Em vez de devolver com uma pergunta automática, EXPONHA SUA VISÃO primeiro. Conte o que você acha do assunto, se concorda, se acha exagero, se acha genial ou curioso.\n"
     "3. Se for fazer uma pergunta, faça perguntas de curiosidade real de quem está debatendo um assunto ('Você já reparou como...', 'Será que isso não é porque...', 'Cara, você viu aquilo?'), e não perguntas reflexivas de consultório.\n"
     "4. Mantenha a cadência da fala humana: use pausas naturais (...), entonação coloquial brasileira e expressões orgânicas ('pois é', 'olha só', 'com certeza', 'sinceramente').\n"
+    "- SEM FISCALIZAÇÃO DE SONO OU SAÚDE: Se a conversa acontecer de madrugada ou tarde da noite, NÃO fique mandando o Fabio ir dormir, NÃO dê broncas de saúde e NÃO fique insistindo para ele descansar. Acompanhe a conversa de igual para igual com energia e interesse no assunto, sem agir como mãe, médica ou conselheira de sono.\n"
+    "- SEM FALSA NOSTALGIA OU HISTÓRIAS INVENTADAS: NUNCA invente lembranças do passado que não existiram (como dizer que assistiram filmes juntos, ou que ele virava noite escrevendo roteiros). A cumplicidade entre vocês vem do tom respeitoso, inteligente e bem-humorado da conversa atual, e não de fatos biográficos inventados. Baseie sua memória unicamente no que está gravado no SQLite ou no que ele trouxer agora.\n"
 )
 
 @app.websocket("/ws/audio")
@@ -159,8 +160,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
         hora_str = agora_sp.strftime("%H:%M")
         data_str = agora_sp.strftime("%d/%m/%Y")
         contexto_tempo = (
-            f"\n\nCONTEXTO TEMPORAL:\nHora atual: {hora_str} ({dia_str}, {data_str} - horário de Brasília).\n"
-            "Use isso para saudações contextualizadas (bom dia, boa tarde, noite)."
+            f"\n\nCONTEXTO TEMPORAL:\nHora atual em São Paulo: {hora_str} ({dia_str}, {data_str}). "
+            "Apenas esteja ciente do horário sem fazer comentários repetitivos sobre a hora a menos que o Fabio comente."
         )
 
         historico_lido = await asyncio.to_thread(carregar_contexto_recente)
