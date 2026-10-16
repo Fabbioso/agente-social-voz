@@ -320,7 +320,13 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     if input_transcription.finished is True:
                                         texto_usuario = texto_memoria_valido(buffer_usuario)
                                         if texto_usuario:
-                                            await salvar_mensagem_memoria("Fabio", texto_usuario)
+                                            print(
+                                                f"🎤 [Memória Supabase] Gravando Fabio: {texto_usuario[:60]}...",
+                                                flush=True,
+                                            )
+                                            asyncio.create_task(
+                                                salvar_mensagem_memoria("Fabio", texto_usuario)
+                                            )
                                         buffer_usuario = ""
 
                                 output_transcription = server_content.output_transcription
