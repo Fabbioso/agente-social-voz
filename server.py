@@ -2,6 +2,8 @@ import os
 import asyncio
 import sqlite3
 import re
+import socket
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import time
@@ -45,14 +47,29 @@ load_dotenv()
 app = FastAPI(title="Sofia Voice Server")
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memoria_sofia.db")
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+raw_url = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip().strip("'\"")
+
+match = re.search(r"https://[a-zA-Z0-9_-]+\.supabase\.co", raw_url)
+SUPABASE_URL = match.group(0) if match else raw_url.strip("'\"").rstrip("/")
 
 print(
-    f"🔍 [Diag Supabase] SUPABASE_URL presente? {'SIM' if SUPABASE_URL else 'NÃO'} | "
-    f"SUPABASE_KEY presente? {'SIM' if SUPABASE_KEY else 'NÃO'}",
+    f"🔍 [Diag Supabase] URL limpa: '{SUPABASE_URL}' | KEY presente? "
+    f"{'SIM' if SUPABASE_KEY else 'NÃO'}",
     flush=True,
 )
+
+if SUPABASE_URL:
+    host = ""
+    try:
+        host = urllib.parse.urlparse(SUPABASE_URL).netloc
+        ip_resolvido = socket.gethostbyname(host)
+        print(
+            f"🌐 [DNS Supabase] Host {host} resolvido com sucesso para o IP: {ip_resolvido}",
+            flush=True,
+        )
+    except Exception as dns_err:
+        print(f"⚠️ [DNS Supabase] Falha ao resolver host '{host}': {dns_err}", flush=True)
 
 supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
@@ -63,7 +80,7 @@ if SUPABASE_URL and SUPABASE_KEY:
         print(f"⚠️ [Supabase] Falha ao criar cliente: {e}", flush=True)
 else:
     print(
-        "⚠️ [Supabase] Variáveis de ambiente ausentes no Render! Operando apenas em SQLite.",
+        "⚠️ [Supabase] Configuração incompleta. Operando em SQLite.",
         flush=True,
     )
 
