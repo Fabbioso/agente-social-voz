@@ -97,7 +97,7 @@ async def health():
 
 
 # Inicialização do cliente Gemini
-client = genai.Client()
+client = genai.Client(http_options={"api_version": "v1alpha"})
 MODEL_ID = "gemini-2.0-flash-exp"
 
 prompt_sistema = (
