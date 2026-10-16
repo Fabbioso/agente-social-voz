@@ -246,11 +246,14 @@
     let isAiPlaying = false;
     let nextStartTime = 0;
     let activeSources = [];
+    let aiPlaybackTimeout = null;
     let wakeLock = null;
 
     function abortAudioQueue() {
       const pendingSources = activeSources;
       activeSources = [];
+      clearTimeout(aiPlaybackTimeout);
+      aiPlaybackTimeout = null;
       isAiPlaying = false;
       nextStartTime = audioCtx.currentTime;
       pendingSources.forEach(source => source.stop());
@@ -346,6 +349,11 @@
           orb.className = "orb falando";
           statusText.innerText = "Sofia falando...";
           isAiPlaying = true;
+          clearTimeout(aiPlaybackTimeout);
+          aiPlaybackTimeout = setTimeout(() => {
+            isAiPlaying = false;
+            aiPlaybackTimeout = null;
+          }, 1500);
 
           const pcm16 = new Int16Array(event.data);
           const float32 = new Float32Array(pcm16.length);
@@ -363,7 +371,11 @@
 
           source.onended = () => {
             activeSources = activeSources.filter(activeSource => activeSource !== source);
-            if (activeSources.length === 0) isAiPlaying = false;
+            if (activeSources.length === 0) {
+              isAiPlaying = false;
+              clearTimeout(aiPlaybackTimeout);
+              aiPlaybackTimeout = null;
+            }
             if (audioCtx.currentTime >= nextStartTime - 0.05) {
               orb.className = "orb";
               statusText.innerText = "Ouvindo...";
@@ -400,7 +412,7 @@
           channelCount: 1,
           sampleRate: 16000,
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false,
           autoGainControl: true
         }
       });
@@ -424,13 +436,8 @@
             sumOfSquares += inputData[i] * inputData[i];
           }
           const rms = Math.sqrt(sumOfSquares / inputData.length);
-          if (rms < 0.005) {
-            orb.style.setProperty('--voice-glow', '0px');
-            orb.className = 'orb';
-            return;
-          }
           orb.style.setProperty('--voice-glow', `${Math.min(28, rms * 1200)}px`);
-          orb.className = 'orb captando';
+          orb.className = rms < 0.005 ? 'orb' : 'orb captando';
         }
 
         const pcm16 = new Int16Array(inputData.length);
