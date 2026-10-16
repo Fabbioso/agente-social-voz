@@ -411,12 +411,14 @@
 
       processor.onaudioprocess = (e) => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const mode = getSelectedMode();
-        if (mode === 'handsfree' && isAiPlaying) return;
-        if (mode === 'ptt' && !isPttActive) return;
+        const currentMode = getSelectedMode();
+        if (isAiPlaying && currentMode === 'handsfree') {
+          return;
+        }
+        if (currentMode === 'ptt' && !isPttActive) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
-        if (mode === 'handsfree') {
+        if (currentMode === 'handsfree') {
           let sumOfSquares = 0;
           for (let i = 0; i < inputData.length; i++) {
             sumOfSquares += inputData[i] * inputData[i];
