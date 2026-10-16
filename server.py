@@ -2,6 +2,9 @@ import os
 import asyncio
 import sqlite3
 import re
+import urllib.request
+import xml.etree.ElementTree as ET
+import time
 from contextlib import closing
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -9,6 +12,30 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from google import genai
 from google.genai import types
+
+_cache_noticias = {"timestamp": 0, "manchetes": []}
+
+
+def obter_radar_noticias():
+    agora = time.time()
+    if agora - _cache_noticias["timestamp"] < 3600 and _cache_noticias["manchetes"]:
+        return _cache_noticias["manchetes"]
+    try:
+        url = "https://news.google.com/rss?hl=pt-BR&gl=BR&ceid=BR:pt-419"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            xml_data = resp.read()
+        root = ET.fromstring(xml_data)
+        items = root.findall(".//item")[:6]
+        manchetes = [item.find("title").text for item in items if item.find("title") is not None]
+        _cache_noticias["timestamp"] = agora
+        _cache_noticias["manchetes"] = manchetes
+        print(f"📰 [Radar] Atualizadas {len(manchetes)} notícias no cache.")
+        return manchetes
+    except Exception as e:
+        print(f"⚠️ [Radar] Erro ao buscar notícias: {e}")
+        return _cache_noticias.get("manchetes", [])
+
 
 load_dotenv()
 
@@ -120,10 +147,18 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     print("\n📱 [Celular] Conectado ao WebSocket!")
 
     try:
+        noticias = await asyncio.to_thread(obter_radar_noticias)
+        contexto_noticias = ""
+        if noticias:
+            contexto_noticias = (
+                "\n\nRADAR DO DIA (Acontecimentos e manchetes recentes de que você tem conhecimento e pode citar, comentar ou puxar assunto espontaneamente se fizer sentido no diálogo):\n"
+                + "\n".join(f"- {noticia}" for noticia in noticias)
+            )
+        prompt_final = prompt_sistema + contexto_noticias
+
         contexto_recente = await asyncio.to_thread(carregar_contexto_recente)
-        prompt_com_contexto = prompt_sistema
         if contexto_recente:
-            prompt_com_contexto += f"\n\n{contexto_recente}"
+            prompt_final += f"\n\n{contexto_recente}"
 
         config_live = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -137,7 +172,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             system_instruction=types.Content(
-                parts=[types.Part.from_text(text=prompt_com_contexto)]
+                parts=[types.Part.from_text(text=prompt_final)]
             ),
         )
 
