@@ -45,15 +45,27 @@ load_dotenv()
 app = FastAPI(title="Sofia Voice Server")
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memoria_sofia.db")
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+
+print(
+    f"🔍 [Diag Supabase] SUPABASE_URL presente? {'SIM' if SUPABASE_URL else 'NÃO'} | "
+    f"SUPABASE_KEY presente? {'SIM' if SUPABASE_KEY else 'NÃO'}",
+    flush=True,
+)
+
 supabase_client: Client = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("[Supabase] Conectado com sucesso à nuvem!")
+        print("⚡ [Supabase] Cliente inicializado com sucesso!", flush=True)
     except Exception as e:
-        print(f"[Supabase] Erro ao conectar: {e}. Usando SQLite.")
+        print(f"⚠️ [Supabase] Falha ao criar cliente: {e}", flush=True)
+else:
+    print(
+        "⚠️ [Supabase] Variáveis de ambiente ausentes no Render! Operando apenas em SQLite.",
+        flush=True,
+    )
 
 
 def inicializar_banco():
@@ -73,7 +85,7 @@ def inicializar_banco():
 
 
 def salvar_mensagem_sqlite(speaker: str, texto: str):
-    print(f"[Memória SQLite] Gravando {speaker}: {texto}")
+    print(f"[Memória SQLite] Gravando {speaker}: {texto}", flush=True)
     with closing(sqlite3.connect(DB_PATH)) as conexao:
         with conexao:
             conexao.execute(
@@ -91,7 +103,7 @@ def ler_historico_sqlite(limite: int = 8):
         )
         registros = cursor.fetchall()
 
-    print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}")
+    print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}", flush=True)
     return registros[::-1] if registros else []
 
 
@@ -108,7 +120,7 @@ def ler_historico_recente(limite: int = 8):
             if resp.data:
                 return [(item["speaker"], item["text"]) for item in reversed(resp.data)]
         except Exception as e:
-            print(f"[Supabase] Erro na leitura: {e}. Recorrendo ao SQLite.")
+            print(f"[Supabase] Erro na leitura: {e}. Recorrendo ao SQLite.", flush=True)
     return ler_historico_sqlite(limite)
 
 
@@ -120,14 +132,14 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
                     {"speaker": speaker, "text": texto}
                 ).execute()
             )
-            print(f"[Memória Supabase] Gravando {speaker}: {texto[:60]}...")
+            print(f"[Memória Supabase] Gravando {speaker}: {texto[:60]}...", flush=True)
             return
         except Exception as e:
-            print(f"[Supabase] Erro na gravação: {e}. Recorrendo ao SQLite.")
+            print(f"[Supabase] Erro na gravação: {e}. Recorrendo ao SQLite.", flush=True)
     try:
         await asyncio.to_thread(salvar_mensagem_sqlite, speaker, texto)
     except Exception as e:
-        print(f"[Memória SQLite] Erro ao gravar registro: {e}")
+        print(f"[Memória SQLite] Erro ao gravar registro: {e}", flush=True)
 
 
 def texto_memoria_valido(conteudo: str) -> str:
