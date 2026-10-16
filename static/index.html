@@ -244,7 +244,7 @@
     let ws, audioCtx, micStream, processor;
     let isPttActive = false;
     let isAiPlaying = false;
-    let nextStartTime = 0;
+    let nextPlayTime = 0;
     let activeSources = [];
     let aiPlaybackTimeout = null;
     let wakeLock = null;
@@ -255,7 +255,7 @@
       clearTimeout(aiPlaybackTimeout);
       aiPlaybackTimeout = null;
       isAiPlaying = false;
-      nextStartTime = audioCtx.currentTime;
+      nextPlayTime = audioCtx.currentTime;
       pendingSources.forEach(source => source.stop());
       orb.className = "orb";
       statusText.innerText = "Ouvindo...";
@@ -346,23 +346,25 @@
             return;
           }
 
-          orb.className = "orb falando";
-          statusText.innerText = "Sofia falando...";
           isAiPlaying = true;
           clearTimeout(aiPlaybackTimeout);
           aiPlaybackTimeout = setTimeout(() => {
             isAiPlaying = false;
             aiPlaybackTimeout = null;
           }, 1500);
+          orb.className = "orb falando";
+          statusText.innerText = "Sofia falando...";
 
-          const pcm16 = new Int16Array(event.data);
-          const float32 = new Float32Array(pcm16.length);
-          for (let i = 0; i < pcm16.length; i++) {
-            float32[i] = pcm16[i] / 32768.0;
+          const arrayBuffer = event.data;
+          const sampleCount = Math.floor(arrayBuffer.byteLength / 2);
+          const pcmView = new DataView(arrayBuffer);
+          const float32Data = new Float32Array(sampleCount);
+          for (let i = 0; i < sampleCount; i++) {
+            float32Data[i] = pcmView.getInt16(i * 2, true) / 32768.0;
           }
 
-          const audioBuffer = audioCtx.createBuffer(1, float32.length, 24000);
-          audioBuffer.copyToChannel(float32, 0);
+          const audioBuffer = audioCtx.createBuffer(1, float32Data.length, 24000);
+          audioBuffer.copyToChannel(float32Data, 0);
 
           const source = audioCtx.createBufferSource();
           source.buffer = audioBuffer;
@@ -376,16 +378,15 @@
               clearTimeout(aiPlaybackTimeout);
               aiPlaybackTimeout = null;
             }
-            if (audioCtx.currentTime >= nextStartTime - 0.05) {
+            if (audioCtx.currentTime >= nextPlayTime - 0.05) {
               orb.className = "orb";
               statusText.innerText = "Ouvindo...";
             }
           };
 
-          const currentTime = audioCtx.currentTime;
-          if (nextStartTime < currentTime) nextStartTime = currentTime;
-          source.start(nextStartTime);
-          nextStartTime += audioBuffer.duration;
+          const startTime = Math.max(audioCtx.currentTime, nextPlayTime);
+          source.start(startTime);
+          nextPlayTime = startTime + audioBuffer.duration;
         };
 
         ws.onclose = () => {

@@ -98,7 +98,7 @@ async def health():
 
 # Inicialização do cliente Gemini
 client = genai.Client()
-MODEL_ID = "models/gemini-2.5-flash-native-audio-latest"
+MODEL_ID = "models/gemini-2.0-flash-exp"
 
 prompt_sistema = (
     "Você é a Sofia, amiga próxima e confidente de longa data do Fabio.\n\n"
