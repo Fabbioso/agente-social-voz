@@ -5,6 +5,7 @@ import re
 import urllib.request
 import xml.etree.ElementTree as ET
 import time
+from datetime import datetime, timezone, timedelta
 from contextlib import closing
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse
 from google import genai
 from google.genai import types
 
+FUSO_SP = timezone(timedelta(hours=-3))
 _cache_noticias = {"timestamp": 0, "manchetes": []}
 
 
@@ -69,7 +71,7 @@ def salvar_memoria(papel: str, conteudo: str):
             )
 
 
-def carregar_contexto_recente(limite: int = 6):
+def carregar_contexto_recente(limite: int = 8):
     with closing(sqlite3.connect(DB_PATH)) as conexao:
         registros = conexao.execute(
             "SELECT papel, conteudo FROM historico ORDER BY id DESC LIMIT ?",
@@ -77,12 +79,7 @@ def carregar_contexto_recente(limite: int = 6):
         ).fetchall()
 
     print(f"[Memória SQLite] Lidos {len(registros)} registro(s): {registros}")
-    if not registros:
-        return ""
-
-    linhas = ["Histórico recente da conversa:"]
-    linhas.extend(f"{papel}: {conteudo}" for papel, conteudo in reversed(registros))
-    return "\n".join(linhas)
+    return list(reversed(registros))
 
 
 async def salvar_memoria_em_background(papel: str, conteudo: str):
@@ -148,6 +145,37 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     print("\n📱 [Celular] Conectado ao WebSocket!")
 
     try:
+        agora_sp = datetime.now(FUSO_SP)
+        dias_semana = [
+            "segunda-feira",
+            "terça-feira",
+            "quarta-feira",
+            "quinta-feira",
+            "sexta-feira",
+            "sábado",
+            "domingo",
+        ]
+        dia_str = dias_semana[agora_sp.weekday()]
+        hora_str = agora_sp.strftime("%H:%M")
+        data_str = agora_sp.strftime("%d/%m/%Y")
+        contexto_tempo = (
+            f"\n\nCONTEXTO TEMPORAL:\nHora atual: {hora_str} ({dia_str}, {data_str} - horário de Brasília).\n"
+            "Use isso para saudações contextualizadas (bom dia, boa tarde, noite)."
+        )
+
+        historico_lido = await asyncio.to_thread(carregar_contexto_recente)
+        contexto_memoria = ""
+        if historico_lido:
+            linhas = [
+                f"- {remetente}: {texto}" for remetente, texto in historico_lido
+            ]
+            contexto_memoria = (
+                "\n\nMEMÓRIA DE CONVERSAS ANTERIORES COM O FABIO:\n"
+                "Abaixo estão os últimos assuntos que vocês conversaram recentemente. "
+                "Use essas lembranças com naturalidade para dar continuidade à amizade, perguntar como ficaram as coisas ou demonstrar cumplicidade:\n"
+                + "\n".join(linhas)
+            )
+
         noticias = await asyncio.to_thread(obter_radar_noticias)
         contexto_noticias = ""
         if noticias:
@@ -161,11 +189,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 "- Mantenha a postura de amiga próxima e descontraída, e não de jornalista ou comentarista de rádio.\n"
                 + "\n".join(f"- {noticia}" for noticia in noticias)
             )
-        prompt_final = prompt_sistema + contexto_noticias
-
-        contexto_recente = await asyncio.to_thread(carregar_contexto_recente)
-        if contexto_recente:
-            prompt_final += f"\n\n{contexto_recente}"
+        prompt_final = (
+            prompt_sistema + contexto_tempo + contexto_memoria + contexto_noticias
+        )
 
         config_live = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
