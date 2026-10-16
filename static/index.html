@@ -241,6 +241,13 @@
   </div>
 
   <script>
+    const cacheVersion = '2';
+    if ('caches' in window && localStorage.getItem('sofiaCacheVersion') !== cacheVersion) {
+      caches.keys()
+        .then(cacheNames => Promise.all(cacheNames.map(cacheName => caches.delete(cacheName))))
+        .then(() => localStorage.setItem('sofiaCacheVersion', cacheVersion));
+    }
+
     let ws, audioCtx, micStream, processor;
     let isPttActive = false;
     let isAiPlaying = false;
@@ -427,6 +434,9 @@
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const currentMode = getSelectedMode();
         if (isAiPlaying && currentMode === 'handsfree') {
+          return;
+        }
+        if (currentMode === 'handsfree' && audioCtx && audioCtx.currentTime < (nextPlayTime + 0.35)) {
           return;
         }
         if (currentMode === 'ptt' && !isPttActive) return;
