@@ -97,8 +97,8 @@ async def health():
 
 
 # Inicialização do cliente Gemini
-client = genai.Client(http_options={"api_version": "v1alpha"})
-MODEL_ID = "gemini-2.0-flash-exp"
+client = genai.Client()
+MODEL_ID = "models/gemini-2.0-flash-exp"
 
 prompt_sistema = (
     "Você é a Sofia, amiga próxima e confidente de longa data do Fabio.\n\n"
@@ -139,7 +139,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Puck"
+                        voice_name="Kore"
                     )
                 )
             ),
@@ -162,12 +162,11 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(data)} bytes de áudio do celular", flush=True)
-                        await session.send(
-                            input={
+                        await session.send_realtime_input(
+                            media={
                                 "data": data,
                                 "mime_type": "audio/pcm;rate=16000",
-                            },
-                            end_of_turn=False,
+                            }
                         )
                 except asyncio.CancelledError:
                     raise
