@@ -158,6 +158,10 @@ async def carregar_memoria_completa():
                     for item in res_fatos.data
                 ]
                 fatos_texto = "\n".join(linhas_fatos)
+                print(
+                    f"🧠 [Memória Permanente] Carregados {len(res_fatos.data)} fatos consolidados.",
+                    flush=True,
+                )
         except Exception as e:
             print(f"⚠️ Erro ao carregar memorias_permanentes: {e}", flush=True)
 
