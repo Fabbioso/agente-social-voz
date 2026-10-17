@@ -175,7 +175,7 @@ async def transcrever_e_salvar_fabio(audio_bytes: bytes):
 
         def _transcrever():
             return client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=[
                     types.Part.from_bytes(data=wav_data, mime_type="audio/wav"),
                     "Transcreva apenas o que a pessoa disse em português. Não adicione pontuação extra nem comentários.",
