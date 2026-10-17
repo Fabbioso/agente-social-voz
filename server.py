@@ -1,10 +1,8 @@
 import os
-import io
 import asyncio
 import sqlite3
 import re
 import socket
-import wave
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -161,44 +159,6 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
         print(f"[Memória SQLite] Erro ao gravar registro: {e}", flush=True)
 
 
-async def transcrever_e_salvar_fabio(audio_bytes: bytes):
-    if not audio_bytes or len(audio_bytes) < 40000:
-        return
-    try:
-        wav_io = io.BytesIO()
-        with wave.open(wav_io, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(16000)
-            wav_file.writeframes(audio_bytes)
-        wav_data = wav_io.getvalue()
-
-        def _transcrever():
-            prompt = (
-                "Transcreva com precisão o que o usuário falou neste áudio em português. "
-                "IMPORTANTE: Se o áudio contiver apenas silêncio, chiado, respiração, eco distante ou "
-                "ruídos ininteligíveis, responda estritamente com a palavra: VAZIO. "
-                "Não invente frases, tutoriais ou saudações."
-            )
-            return client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=[
-                    types.Part.from_bytes(data=wav_data, mime_type="audio/wav"),
-                    prompt,
-                ],
-            )
-
-        resp = await asyncio.to_thread(_transcrever)
-        texto = resp.text.strip() if resp and resp.text else ""
-        if not texto or "VAZIO" in texto.upper() or len(texto) < 3:
-            return
-
-        print(f"🎤 [Memória Supabase] Gravando Fabio: {texto[:60]}...", flush=True)
-        await salvar_mensagem_memoria("Fabio", texto)
-    except Exception as e:
-        print(f"⚠️ [Transcrição Fabio] Falha: {e}", flush=True)
-
-
 def texto_memoria_valido(conteudo: str) -> str:
     conteudo = conteudo.strip()
     if conteudo.startswith("**"):
@@ -255,8 +215,6 @@ prompt_sistema = (
 async def websocket_audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("\n📱 [Celular] Conectado ao WebSocket!")
-    user_audio_buffer = bytearray()
-    sofia_falando = False
 
     try:
         agora_sp = datetime.now(FUSO_SP)
@@ -309,6 +267,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
         config_live = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -331,10 +290,6 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     pacotes_recebidos = 0
                     while True:
                         data = await websocket.receive_bytes()
-                        if not sofia_falando:
-                            user_audio_buffer.extend(data)
-                        else:
-                            user_audio_buffer.clear()
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(data)} bytes de áudio do celular", flush=True)
@@ -351,7 +306,6 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
-                nonlocal sofia_falando
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
                 try:
@@ -359,6 +313,29 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         async for response in session.receive():
                             server_content = response.server_content
                             if server_content is not None:
+                                if (
+                                    hasattr(server_content, "input_transcription")
+                                    and server_content.input_transcription
+                                ):
+                                    texto_fabio = (
+                                        getattr(
+                                            server_content.input_transcription,
+                                            "text",
+                                            "",
+                                        )
+                                        or ""
+                                    )
+                                    if texto_fabio.strip() and len(texto_fabio.strip()) > 1:
+                                        print(
+                                            f"🎤 [Memória Supabase] Gravando Fabio: {texto_fabio[:60]}...",
+                                            flush=True,
+                                        )
+                                        asyncio.create_task(
+                                            salvar_mensagem_memoria(
+                                                "Fabio", texto_fabio.strip()
+                                            )
+                                        )
+
                                 output_transcription = server_content.output_transcription
                                 if output_transcription and output_transcription.text:
                                     buffer_sofia += output_transcription.text
@@ -376,21 +353,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                 if model_turn is not None:
                                     for part in model_turn.parts:
                                         if part.inline_data and part.inline_data.data:
-                                            if not sofia_falando:
-                                                sofia_falando = True
-                                                if len(user_audio_buffer) >= 40000:
-                                                    audio_snapshot = bytes(user_audio_buffer)
-                                                    user_audio_buffer.clear()
-                                                    asyncio.create_task(
-                                                        transcrever_e_salvar_fabio(audio_snapshot)
-                                                    )
-                                                else:
-                                                    user_audio_buffer.clear()
                                             await websocket.send_bytes(part.inline_data.data)
 
                                 if server_content.turn_complete:
-                                    sofia_falando = False
-                                    user_audio_buffer.clear()
                                     print("💬 [Sofia] Turno concluído.")
                                     texto_sofia = texto_memoria_valido(
                                         buffer_sofia or buffer_sofia_partes
