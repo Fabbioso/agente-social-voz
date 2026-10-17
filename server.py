@@ -141,6 +141,65 @@ def ler_historico_recente(limite: int = 8):
     return ler_historico_sqlite(limite)
 
 
+async def carregar_memoria_completa():
+    fatos_texto = ""
+    historico_texto = ""
+
+    if supabase_client:
+        try:
+            res_fatos = await asyncio.to_thread(
+                lambda: supabase_client.table("memorias_permanentes")
+                .select("categoria, fato")
+                .execute()
+            )
+            if res_fatos.data:
+                linhas_fatos = [
+                    f"- [{item['categoria']}]: {item['fato']}"
+                    for item in res_fatos.data
+                ]
+                fatos_texto = "\n".join(linhas_fatos)
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar memorias_permanentes: {e}", flush=True)
+
+        try:
+            res_conversas = await asyncio.to_thread(
+                lambda: supabase_client.table("conversas_sofia")
+                .select("speaker, text")
+                .order("id", desc=True)
+                .limit(20)
+                .execute()
+            )
+            if res_conversas.data:
+                mensagens = reversed(res_conversas.data)
+                linhas_hist = [
+                    f"{mensagem['speaker']}: {mensagem['text']}"
+                    for mensagem in mensagens
+                ]
+                historico_texto = "\n".join(linhas_hist)
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar conversas_sofia: {e}", flush=True)
+
+    if not historico_texto:
+        historico_sqlite = await asyncio.to_thread(ler_historico_sqlite, 20)
+        if historico_sqlite:
+            historico_texto = "\n".join(
+                f"{speaker}: {texto}" for speaker, texto in historico_sqlite
+            )
+
+    contexto_inicial = ""
+    if fatos_texto:
+        contexto_inicial += (
+            f"\n\nFATOS PERMANENTES QUE VOCÊ SABE SOBRE O FÁBIO:\n{fatos_texto}"
+        )
+    if historico_texto:
+        contexto_inicial += (
+            "\n\nHISTÓRICO RECENTE DAS ÚLTIMAS CONVERSAS:\n"
+            f"{historico_texto}"
+        )
+
+    return contexto_inicial
+
+
 async def salvar_mensagem_memoria(speaker: str, texto: str):
     if supabase_client:
         try:
@@ -258,18 +317,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             "Apenas esteja ciente do horário sem fazer comentários repetitivos sobre a hora a menos que o Fabio comente."
         )
 
-        historico_lido = await asyncio.to_thread(ler_historico_recente)
-        contexto_memoria = ""
-        if historico_lido:
-            linhas = [
-                f"- {remetente}: {texto}" for remetente, texto in historico_lido
-            ]
-            contexto_memoria = (
-                "\n\nMEMÓRIA DE CONVERSAS ANTERIORES COM O FABIO:\n"
-                "Abaixo estão os últimos assuntos que vocês conversaram recentemente. "
-                "Use essas lembranças com naturalidade para dar continuidade à amizade, perguntar como ficaram as coisas ou demonstrar cumplicidade:\n"
-                + "\n".join(linhas)
-            )
+        contexto_memoria = await carregar_memoria_completa()
 
         noticias = await asyncio.to_thread(obter_radar_noticias)
         contexto_noticias = ""
