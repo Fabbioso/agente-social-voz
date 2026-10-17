@@ -308,6 +308,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
+                fabio_transcricao_buffer = []
                 try:
                     while True:
                         async for response in session.receive():
@@ -325,16 +326,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                         )
                                         or ""
                                     )
-                                    if texto_fabio.strip() and len(texto_fabio.strip()) > 1:
-                                        print(
-                                            f"🎤 [Memória Supabase] Gravando Fabio: {texto_fabio[:60]}...",
-                                            flush=True,
-                                        )
-                                        asyncio.create_task(
-                                            salvar_mensagem_memoria(
-                                                "Fabio", texto_fabio.strip()
-                                            )
-                                        )
+                                    if texto_fabio:
+                                        fabio_transcricao_buffer.append(texto_fabio)
 
                                 output_transcription = server_content.output_transcription
                                 if output_transcription and output_transcription.text:
@@ -342,6 +335,21 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                                 model_turn = server_content.model_turn
                                 if model_turn is not None:
+                                    if fabio_transcricao_buffer:
+                                        frase_completa = "".join(
+                                            fabio_transcricao_buffer
+                                        ).strip()
+                                        fabio_transcricao_buffer.clear()
+                                        if len(frase_completa) > 2:
+                                            print(
+                                                f"🎤 [Memória Supabase] Gravando Fabio (completo): {frase_completa[:70]}...",
+                                                flush=True,
+                                            )
+                                            asyncio.create_task(
+                                                salvar_mensagem_memoria(
+                                                    "Fabio", frase_completa
+                                                )
+                                            )
                                     for part in model_turn.parts:
                                         if part.text and not getattr(part, "thought", False):
                                             buffer_sofia_partes += part.text
