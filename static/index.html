@@ -416,15 +416,15 @@
     };
 
     async function iniciarMicrofone() {
-      micStream = await navigator.mediaDevices.getUserMedia({
+      const audioConstraints = {
         audio: {
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
           channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
         }
-      });
+      };
+      micStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
 
       const micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const source = micCtx.createMediaStreamSource(micStream);
