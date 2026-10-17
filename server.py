@@ -149,7 +149,6 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
                     {"speaker": speaker, "text": texto}
                 ).execute()
             )
-            print(f"[Memória Supabase] Gravando {speaker}: {texto[:60]}...", flush=True)
             return
         except Exception as e:
             print(f"[Supabase] Erro na gravação: {e}. Recorrendo ao SQLite.", flush=True)
@@ -157,6 +156,14 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
         await asyncio.to_thread(salvar_mensagem_sqlite, speaker, texto)
     except Exception as e:
         print(f"[Memória SQLite] Erro ao gravar registro: {e}", flush=True)
+
+
+def sanitizar_transcricao(texto: str) -> str:
+    if not texto:
+        return ""
+    limpo = re.sub(r"<[^>]+>", "", texto)
+    limpo = re.sub(r"\s+", " ", limpo).strip()
+    return limpo
 
 
 def texto_memoria_valido(conteudo: str) -> str:
@@ -215,6 +222,7 @@ prompt_sistema = (
 async def websocket_audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("\n📱 [Celular] Conectado ao WebSocket!")
+    sofia_emitindo_audio = False
 
     try:
         agora_sp = datetime.now(FUSO_SP)
@@ -293,6 +301,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(data)} bytes de áudio do celular", flush=True)
+                        if sofia_emitindo_audio:
+                            continue
                         await session.send_realtime_input(
                             media={
                                 "data": data,
@@ -306,6 +316,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
+                nonlocal sofia_emitindo_audio
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
                 fabio_transcricao_buffer = []
@@ -340,16 +351,18 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                             fabio_transcricao_buffer
                                         ).strip()
                                         fabio_transcricao_buffer.clear()
-                                        if len(frase_completa) > 2:
+                                        frase_limpa = sanitizar_transcricao(frase_completa)
+                                        if len(frase_limpa) >= 3:
                                             print(
-                                                f"🎤 [Memória Supabase] Gravando Fabio (completo): {frase_completa[:70]}...",
+                                                f"🎤 [Memória Supabase] Gravando Fabio: {frase_limpa[:70]}...",
                                                 flush=True,
                                             )
                                             asyncio.create_task(
                                                 salvar_mensagem_memoria(
-                                                    "Fabio", frase_completa
+                                                    "Fabio", frase_limpa
                                                 )
                                             )
+                                    sofia_emitindo_audio = True
                                     for part in model_turn.parts:
                                         if part.text and not getattr(part, "thought", False):
                                             buffer_sofia_partes += part.text
@@ -364,6 +377,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                             await websocket.send_bytes(part.inline_data.data)
 
                                 if server_content.turn_complete:
+                                    sofia_emitindo_audio = False
                                     print("💬 [Sofia] Turno concluído.")
                                     texto_sofia = texto_memoria_valido(
                                         buffer_sofia or buffer_sofia_partes
