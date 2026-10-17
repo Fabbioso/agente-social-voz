@@ -319,6 +319,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 nonlocal sofia_emitindo_audio
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
+                fabio_turno_salvo = False
                 fabio_transcricao_buffer = []
                 try:
                     while True:
@@ -339,6 +340,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     )
                                     if texto_fabio:
                                         fabio_transcricao_buffer.append(texto_fabio)
+                                        fabio_turno_salvo = False
 
                                 output_transcription = server_content.output_transcription
                                 if output_transcription and output_transcription.text:
@@ -346,12 +348,13 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                                 model_turn = server_content.model_turn
                                 if model_turn is not None:
-                                    if fabio_transcricao_buffer:
-                                        frase_completa = "".join(
+                                    if not fabio_turno_salvo and fabio_transcricao_buffer:
+                                        fabio_turno_salvo = True
+                                        frase_bruta = "".join(
                                             fabio_transcricao_buffer
-                                        ).strip()
+                                        )
                                         fabio_transcricao_buffer.clear()
-                                        frase_limpa = sanitizar_transcricao(frase_completa)
+                                        frase_limpa = sanitizar_transcricao(frase_bruta)
                                         if len(frase_limpa) >= 3:
                                             print(
                                                 f"🎤 [Memória Supabase] Gravando Fabio: {frase_limpa[:70]}...",
@@ -378,6 +381,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                                 if server_content.turn_complete:
                                     sofia_emitindo_audio = False
+                                    fabio_turno_salvo = False
+                                    fabio_transcricao_buffer.clear()
                                     print("💬 [Sofia] Turno concluído.")
                                     texto_sofia = texto_memoria_valido(
                                         buffer_sofia or buffer_sofia_partes
