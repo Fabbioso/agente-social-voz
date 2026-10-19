@@ -278,7 +278,7 @@ CRITÉRIOS:
 
         resp = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=prompt_analise,
         )
         texto = (resp.text or "").strip()
