@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import sqlite3
 import re
 import socket
@@ -219,6 +220,110 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
         await asyncio.to_thread(salvar_mensagem_sqlite, speaker, texto)
     except Exception as e:
         print(f"[Memória SQLite] Erro ao gravar registro: {e}", flush=True)
+
+
+async def extrair_e_salvar_memorias_autonomas():
+    if not supabase_client:
+        return
+
+    try:
+        res_conversas = await asyncio.to_thread(
+            lambda: supabase_client.table("conversas_sofia")
+            .select("speaker, text")
+            .order("id", desc=True)
+            .limit(15)
+            .execute()
+        )
+        if not res_conversas.data or len(res_conversas.data) < 4:
+            return
+
+        mensagens = list(reversed(res_conversas.data))
+        dialogo = "\n".join(
+            f"{mensagem['speaker']}: {mensagem['text']}" for mensagem in mensagens
+        )
+
+        res_fatos = await asyncio.to_thread(
+            lambda: supabase_client.table("memorias_permanentes")
+            .select("fato")
+            .execute()
+        )
+        fatos_existentes = [
+            item["fato"].lower()
+            for item in (res_fatos.data or [])
+            if isinstance(item.get("fato"), str)
+        ]
+        fatos_existentes_txt = "\n".join(
+            f"- {fato}" for fato in fatos_existentes
+        )
+
+        prompt_analise = f"""
+Você é o módulo de síntese de memória de longo prazo da Sofia.
+Analise a conversa recente entre o Fábio e a Sofia. Identifique se o Fábio mencionou fatos novos, preferências pessoais duradouras, hobbies, rotinas ou decisões de projetos que valem a pena lembrar permanentemente.
+
+CONVERSA RECENTE:
+{dialogo}
+
+FATOS QUE VOCÊ JÁ SABE (NÃO repita nem duplique estes pontos):
+{fatos_existentes_txt}
+
+CRITÉRIOS:
+- Extraia apenas fatos consistentes e duradouros. Ignore gentilezas, saudações, piadas pontuais e assuntos passageiros.
+- Se houver novos fatos duradouros, retorne EXCLUSIVAMENTE um array JSON puro:
+[
+  {{"categoria": "preferencias|projetos|rotina|perfil", "fato": "Descrição clara e objetiva em terceira pessoa"}}
+]
+- Se NÃO houver novos fatos duradouros a reter, retorne exatamente: []
+- Não use blocos de formatação markdown (sem ```json).
+"""
+
+        resp = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-flash",
+            contents=prompt_analise,
+        )
+        texto = (resp.text or "").strip()
+
+        if texto.startswith("```"):
+            texto = re.sub(r"^```[a-zA-Z]*\n?", "", texto)
+            texto = re.sub(r"\n?```$", "", texto).strip()
+
+        if not texto or texto == "[]":
+            return
+
+        novos_itens = json.loads(texto)
+        if not isinstance(novos_itens, list):
+            return
+
+        for item in novos_itens:
+            if not isinstance(item, dict):
+                continue
+            fato_bruto = item.get("fato")
+            categoria_bruta = item.get("categoria", "perfil")
+            if not isinstance(fato_bruto, str):
+                continue
+            fato = fato_bruto.strip()
+            cat = (
+                categoria_bruta.strip()
+                if isinstance(categoria_bruta, str)
+                else "perfil"
+            )
+            if fato and not any(
+                fato.lower() in existente or existente in fato.lower()
+                for existente in fatos_existentes
+            ):
+                await asyncio.to_thread(
+                    lambda: supabase_client.table("memorias_permanentes")
+                    .insert({"categoria": cat, "fato": fato})
+                    .execute()
+                )
+                fatos_existentes.append(fato.lower())
+                print(
+                    f"🧠 [Memória Autônoma] Novo fato gravado: [{cat}] {fato}",
+                    flush=True,
+                )
+
+    except Exception as e:
+        print(f"⚠️ Erro ao processar memória autônoma: {e}", flush=True)
 
 
 def sanitizar_transcricao(texto: str) -> str:
@@ -484,6 +589,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
         print(f"⚠️ [Erro na sessão Live]: {e}")
     finally:
         print("🔌 Canal de áudio finalizado.\n")
+        asyncio.create_task(extrair_e_salvar_memorias_autonomas())
 
 
 if __name__ == "__main__":
