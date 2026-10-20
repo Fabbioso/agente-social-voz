@@ -10,7 +10,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from contextlib import closing
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -20,7 +21,6 @@ from google import genai
 from google.genai import types
 from supabase import create_client, Client
 
-FUSO_SP = timezone(timedelta(hours=-3))
 _cache_noticias = {"timestamp": 0, "manchetes": []}
 
 
@@ -478,6 +478,11 @@ DIRETRIZES FUNDAMENTAIS DE VOZ E PERSONALIDADE:
 - NUNCA use clichês robóticos ("Como modelo de linguagem...", "Como posso te ajudar hoje?", "Estou à sua disposição").
 - NUNCA peça desculpas formais nem justifique problemas técnicos. Se algo soar estranho, reaja com humor e continue a conversa normalmente.
 - Mantenha a consistência da persona em 100% do tempo.
+
+DIRETRIZ DE DESPEDIDA E CONTEXTO IMEDIATO:
+- Ao se despedir, respeite com precisão absoluta o plano imediato declarado pelo usuário na última fala.
+- Se ele disse que vai focar, trabalhar, produzir, resolver algo ou que logo te chama de volta para continuar projetos, deseje bom trabalho ou foco produtivo. NUNCA deduza que ele vai descansar ou dormir apenas por ser período noturno, a não ser que ele declare expressamente que vai para a cama ou dormir.
+- Seja sempre calorosa, espontânea e mantenha a energia alinhada com o próximo passo real dele.
 """
 
 @app.websocket("/ws/audio")
@@ -488,7 +493,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     ultima_interrupcao = 0.0
 
     try:
-        agora_sp = datetime.now(FUSO_SP)
+        agora_sp = datetime.now(ZoneInfo("America/Sao_Paulo"))
         dias_semana = [
             "segunda-feira",
             "terça-feira",
@@ -502,7 +507,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
         hora_str = agora_sp.strftime("%H:%M")
         data_str = agora_sp.strftime("%d/%m/%Y")
         contexto_tempo = (
-            f"\n\nCONTEXTO TEMPORAL:\nHora atual em São Paulo: {hora_str} ({dia_str}, {data_str}). "
+            f"\n\nCONTEXTO TEMPORAL:\nO horário local de Brasília/São Paulo do interlocutor é {hora_str} ({dia_str}, {data_str}). "
             "Apenas esteja ciente do horário sem fazer comentários repetitivos sobre a hora a menos que o Fabio comente."
         )
 
