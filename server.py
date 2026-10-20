@@ -243,6 +243,17 @@ async def extrair_e_salvar_memorias_autonomas():
         return
 
     try:
+        res_fatos = await asyncio.to_thread(
+            lambda: supabase_client.table("memorias_permanentes")
+            .select("id, categoria, fato")
+            .execute()
+        )
+        fatos_existentes = res_fatos.data or []
+        fatos_existentes_txt = "\n".join(
+            f"[ID: {item['id']}] [{item['categoria']}] {item['fato']}"
+            for item in fatos_existentes
+        )
+
         res_conversas = await asyncio.to_thread(
             lambda: supabase_client.table("conversas_sofia")
             .select("speaker, text")
@@ -258,37 +269,30 @@ async def extrair_e_salvar_memorias_autonomas():
             f"{mensagem['speaker']}: {mensagem['text']}" for mensagem in mensagens
         )
 
-        res_fatos = await asyncio.to_thread(
-            lambda: supabase_client.table("memorias_permanentes")
-            .select("fato")
-            .execute()
-        )
-        fatos_existentes = [
-            item["fato"].lower()
-            for item in (res_fatos.data or [])
-            if isinstance(item.get("fato"), str)
-        ]
-        fatos_existentes_txt = "\n".join(
-            f"- {fato}" for fato in fatos_existentes
-        )
-
         prompt_analise = f"""
 Você é o módulo de síntese de memória de longo prazo da Sofia.
-Analise a conversa recente entre o Fábio e a Sofia. Identifique se o Fábio mencionou fatos novos, preferências pessoais duradouras, hobbies, rotinas ou decisões de projetos que valem a pena lembrar permanentemente.
+Compare a conversa recente entre o Fábio e a Sofia com os fatos permanentes atuais, para identificar fatos novos, alterações ou fatos que deixaram de ser verdadeiros.
 
 CONVERSA RECENTE:
 {dialogo}
 
-FATOS QUE VOCÊ JÁ SABE (NÃO repita nem duplique estes pontos):
+FATOS PERMANENTES ATUAIS (use os IDs para atualizar ou remover o fato correto):
 {fatos_existentes_txt}
 
 CRITÉRIOS:
 - Extraia apenas fatos consistentes e duradouros. Ignore gentilezas, saudações, piadas pontuais e assuntos passageiros.
-- Se houver novos fatos duradouros, retorne EXCLUSIVAMENTE um array JSON puro:
+- Retorne EXCLUSIVAMENTE um array JSON puro. Cada item deve ter exatamente os campos "acao", "id", "categoria" e "fato":
 [
-  {{"categoria": "preferencias|projetos|rotina|perfil", "fato": "Descrição clara e objetiva em terceira pessoa"}}
+  {{"acao": "INSERIR", "id": null, "categoria": "preferencias", "fato": "Descrição clara e objetiva em terceira pessoa"}},
+  {{"acao": "ATUALIZAR", "id": 123, "categoria": "rotina", "fato": "Descrição atualizada em terceira pessoa"}},
+  {{"acao": "REMOVER", "id": 123, "categoria": "perfil", "fato": null}}
 ]
-- Se NÃO houver novos fatos duradouros a reter, retorne exatamente: []
+- "acao" deve ser "INSERIR", "ATUALIZAR" ou "REMOVER".
+- Para INSERIR, use "id": null e uma categoria entre "rotina", "preferencias", "perfil" e "projetos".
+- Para ATUALIZAR ou REMOVER, use o ID numérico do fato atual correspondente. Não invente IDs.
+- Para ATUALIZAR, informe a categoria e o fato revisados; para REMOVER, use "fato": null.
+- Não duplique fatos existentes: atualize o fato existente se ele mudou e remova-o apenas se a conversa indicar que deixou de ser válido.
+- Se nada tiver mudado ou for irrelevante, retorne exatamente: []
 - Não use blocos de formatação markdown (sem ```json).
 """
 
@@ -306,36 +310,71 @@ CRITÉRIOS:
         if not texto or texto == "[]":
             return
 
-        novos_itens = json.loads(texto)
-        if not isinstance(novos_itens, list):
+        itens = json.loads(texto)
+        if not isinstance(itens, list):
             return
 
-        for item in novos_itens:
+        ids_existentes = {
+            item["id"]
+            for item in fatos_existentes
+            if isinstance(item.get("id"), int) and not isinstance(item.get("id"), bool)
+        }
+        categorias_validas = {"rotina", "preferencias", "perfil", "projetos"}
+
+        for item in itens:
             if not isinstance(item, dict):
                 continue
-            fato_bruto = item.get("fato")
-            categoria_bruta = item.get("categoria", "perfil")
-            if not isinstance(fato_bruto, str):
+            acao = item.get("acao")
+            if not isinstance(acao, str):
                 continue
-            fato = fato_bruto.strip()
-            cat = (
-                categoria_bruta.strip()
-                if isinstance(categoria_bruta, str)
-                else "perfil"
+
+            print(
+                f"🧠 [Memória Autônoma] Ação: {item['acao']} | ID: {item.get('id')} | Fato: {item.get('fato')}",
+                flush=True,
             )
-            if fato and not any(
-                fato.lower() in existente or existente in fato.lower()
-                for existente in fatos_existentes
-            ):
+
+            categoria = item.get("categoria")
+            fato = item.get("fato")
+            item_id = item.get("id")
+            if not isinstance(categoria, str) or categoria not in categorias_validas:
+                continue
+
+            if acao == "INSERIR":
+                if item_id is not None or not isinstance(fato, str) or not fato.strip():
+                    continue
                 await asyncio.to_thread(
                     lambda: supabase_client.table("memorias_permanentes")
-                    .insert({"categoria": cat, "fato": fato})
+                    .insert({"categoria": categoria, "fato": fato.strip()})
                     .execute()
                 )
-                fatos_existentes.append(fato.lower())
-                print(
-                    f"🧠 [Memória Autônoma] Novo fato gravado: [{cat}] {fato}",
-                    flush=True,
+            elif acao == "ATUALIZAR":
+                if (
+                    not isinstance(item_id, int)
+                    or isinstance(item_id, bool)
+                    or item_id not in ids_existentes
+                    or not isinstance(fato, str)
+                    or not fato.strip()
+                ):
+                    continue
+                await asyncio.to_thread(
+                    lambda: supabase_client.table("memorias_permanentes")
+                    .update({"categoria": categoria, "fato": fato.strip()})
+                    .eq("id", item_id)
+                    .execute()
+                )
+            elif acao == "REMOVER":
+                if (
+                    not isinstance(item_id, int)
+                    or isinstance(item_id, bool)
+                    or item_id not in ids_existentes
+                    or fato is not None
+                ):
+                    continue
+                await asyncio.to_thread(
+                    lambda: supabase_client.table("memorias_permanentes")
+                    .delete()
+                    .eq("id", item_id)
+                    .execute()
                 )
 
     except Exception as e:
