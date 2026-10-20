@@ -296,11 +296,35 @@ CRITÉRIOS:
 - Não use blocos de formatação markdown (sem ```json).
 """
 
-        resp = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-3.8-flash",
-            contents=prompt_analise,
-        )
+        resposta = None
+        max_tentativas = 3
+        for tentativa in range(max_tentativas):
+            try:
+                resposta = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-3.8-flash",
+                    contents=prompt_analise,
+                )
+                break
+            except Exception as erro_api:
+                if "503" in str(erro_api) or "UNAVAILABLE" in str(erro_api):
+                    tempo_espera = 2 * (tentativa + 1)
+                    print(
+                        f"⚠️ [Memória Autônoma] Google API ocupada (503). Tentativa {tentativa + 1}/{max_tentativas}. Aguardando {tempo_espera}s...",
+                        flush=True,
+                    )
+                    await asyncio.sleep(tempo_espera)
+                else:
+                    raise erro_api
+
+        if not resposta:
+            print(
+                "⚠️ [Memória Autônoma] Não foi possível obter resposta após tentativas de retry.",
+                flush=True,
+            )
+            return
+
+        resp = resposta
         texto = (resp.text or "").strip()
 
         if texto.startswith("```"):
