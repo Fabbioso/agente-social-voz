@@ -8,7 +8,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
   <link rel="apple-touch-icon" href="/static/icon.svg">
-  <meta name="theme-color" content="#0a0a0f">
+  <meta name="theme-color" content="#08090d">
   <title>Sofia - Voz em Tempo Real</title>
   <style>
     :root {
@@ -32,9 +32,7 @@
       align-items: center;
       justify-content: space-between;
       color: var(--text-primary);
-      background:
-        radial-gradient(ellipse at 50% 46%, rgba(62, 38, 75, 0.16), transparent 42%),
-        radial-gradient(ellipse at center, #111117 0%, #0a0a0f 72%);
+      background: #08090d;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       touch-action: manipulation;
     }
@@ -81,41 +79,38 @@
       min-height: 0;
       flex: 1;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 24px;
     }
     .orb {
-      width: clamp(180px, 46vw, 240px);
-      aspect-ratio: 1;
+      width: 160px;
+      height: 160px;
+      flex: 0 0 160px;
       border-radius: 50%;
-      background:
-        radial-gradient(ellipse at 34% 27%, rgba(255, 224, 184, 0.9) 0%, transparent 20%),
-        radial-gradient(ellipse at 32% 35%, #ffb26b 0%, #ff7b54 24%, transparent 57%),
-        radial-gradient(ellipse at 70% 70%, #342a91 0%, #172a70 29%, transparent 61%),
-        radial-gradient(ellipse at 63% 35%, #9333ea 0%, transparent 55%),
-        #17142e;
-      box-shadow: 0 0 48px rgba(147, 51, 234, 0.2), 0 0 80px rgba(255, 123, 84, 0.12), inset -12px -16px 34px rgba(5, 8, 28, 0.5);
-      transform: scale(1);
-      transition: transform 350ms ease, box-shadow 500ms ease, filter 500ms ease;
-      animation: orb-breathe 5s ease-in-out infinite;
-      will-change: transform, filter;
+      background: radial-gradient(circle at 35% 35%, #a5f3fc, #6366f1 45%, #3b82f6 75%, #1e1b4b 100%);
+      box-shadow: 0 0 45px rgba(99, 102, 241, 0.45), 0 0 90px rgba(59, 130, 246, 0.25);
+      transition: transform 0.08s ease-out, box-shadow 0.15s ease;
+      animation: orb-breathe 4s ease-in-out infinite;
+      will-change: transform, box-shadow;
     }
-    .orb.ouvindo {
+    .orb.listening {
+      box-shadow: 0 0 45px rgba(99, 102, 241, 0.5), 0 0 90px rgba(59, 130, 246, 0.3);
+    }
+    .orb.speaking {
       animation: none;
-      transform: scale(1.035);
-      filter: brightness(1.08);
-      box-shadow: 0 0 56px rgba(75, 132, 255, 0.27), 0 0 88px rgba(147, 51, 234, 0.18), inset -12px -16px 34px rgba(5, 8, 28, 0.4);
     }
-    .orb.captando {
-      animation: none;
-      transform: scale(1.02);
-      box-shadow: 0 0 calc(34px + var(--voice-glow, 0px)) rgba(73, 180, 255, 0.4), 0 0 76px rgba(147, 51, 234, 0.22), inset -12px -16px 34px rgba(5, 8, 28, 0.4);
+    #orb-caption {
+      min-height: 20px;
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      transition: color 180ms ease, opacity 180ms ease;
     }
-    .orb.falando {
-      animation: orb-speaking 1.8s ease-in-out infinite;
-      box-shadow: 0 0 68px rgba(196, 143, 255, 0.4), 0 0 118px rgba(255, 123, 84, 0.2), inset -12px -16px 34px rgba(5, 8, 28, 0.35);
-      filter: brightness(1.12) saturate(1.1);
-    }
+    #orb-caption[data-state="speaking"] { color: #c4b5fd; }
 
     .controls {
       width: min(100%, 360px);
@@ -184,9 +179,21 @@
     }
     .btn-connect:hover { filter: brightness(1.08); box-shadow: 0 10px 34px rgba(28, 166, 136, 0.3); }
     .btn-connect.is-connected {
+      width: 56px;
+      min-height: 56px;
+      padding: 0;
+      border-radius: 50%;
       background: linear-gradient(110deg, #702f3e, #a33e4d 58%, #b84c57);
-      box-shadow: 0 8px 28px rgba(163, 62, 77, 0.22), inset 0 1px rgba(255, 255, 255, 0.14);
+      box-shadow: 0 4px 18px rgba(163, 62, 77, 0.2), inset 0 1px rgba(255, 255, 255, 0.14);
+      font-size: 0;
     }
+    .btn-connect.is-connected::before {
+      content: "×";
+      font-size: 26px;
+      font-weight: 400;
+      line-height: 1;
+    }
+    .btn-connect.is-connected:hover { filter: brightness(1.08); box-shadow: 0 6px 22px rgba(163, 62, 77, 0.28); }
     .btn-ptt {
       display: none;
       background: rgba(255, 255, 255, 0.075);
@@ -202,12 +209,8 @@
     }
 
     @keyframes orb-breathe {
-      0%, 100% { transform: scale(0.98); }
-      50% { transform: scale(1.025); }
-    }
-    @keyframes orb-speaking {
-      0%, 100% { transform: scale(1.035); }
-      50% { transform: scale(1.09); }
+      0%, 100% { transform: scale(0.96); }
+      50% { transform: scale(1.04); }
     }
     @keyframes status-pulse {
       0%, 100% { opacity: 0.72; transform: scale(0.9); }
@@ -216,7 +219,6 @@
 
     @media (max-height: 620px) {
       body { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(14px, env(safe-area-inset-bottom)); }
-      .orb { width: clamp(150px, 38vh, 210px); }
       .controls { gap: 10px; }
     }
   </style>
@@ -229,6 +231,7 @@
 
   <div class="orb-container">
     <div id="orb" class="orb"></div>
+    <p id="orb-caption" data-state="idle">Toque para conversar</p>
   </div>
 
   <div class="controls">
@@ -241,14 +244,14 @@
   </div>
 
   <script>
-    const cacheVersion = '2';
+    const cacheVersion = '3';
     if ('caches' in window && localStorage.getItem('sofiaCacheVersion') !== cacheVersion) {
       caches.keys()
         .then(cacheNames => Promise.all(cacheNames.map(cacheName => caches.delete(cacheName))))
         .then(() => localStorage.setItem('sofiaCacheVersion', cacheVersion));
     }
 
-    let ws, audioCtx, micStream, processor;
+    let ws, audioCtx, audioAnalyser, frequencyData, micStream, processor;
     let isPttActive = false;
     let isAiPlaying = false;
     let nextPlayTime = 0;
@@ -264,8 +267,36 @@
       isAiPlaying = false;
       nextPlayTime = audioCtx.currentTime;
       pendingSources.forEach(source => source.stop());
-      orb.className = "orb";
+      setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
       statusText.innerText = "Ouvindo...";
+    }
+
+    function setOrbState(state) {
+      orb.className = state === 'speaking' ? 'orb speaking'
+        : state === 'listening' ? 'orb listening'
+        : 'orb';
+      orbCaption.dataset.state = state;
+      orbCaption.innerText = state === 'speaking' ? 'Sofia...'
+        : state === 'listening' ? 'Ouvindo...'
+        : 'Toque para conversar';
+    }
+
+    function animateOrb() {
+      requestAnimationFrame(animateOrb);
+      if (!audioAnalyser || !frequencyData || !isAiPlaying || orbCaption.dataset.state !== 'speaking') {
+        orb.style.removeProperty('transform');
+        orb.style.removeProperty('box-shadow');
+        return;
+      }
+
+      audioAnalyser.getByteFrequencyData(frequencyData);
+      const average = frequencyData.reduce((sum, value) => sum + value, 0) / frequencyData.length;
+      const volumeNormalized = Math.min(1, average / 255);
+      const scale = 1 + volumeNormalized * 0.35;
+      const glow = 45 + volumeNormalized * 55;
+      const outerGlow = 90 + volumeNormalized * 70;
+      orb.style.transform = `scale(${scale})`;
+      orb.style.boxShadow = `0 0 ${glow}px rgba(99, 102, 241, ${0.45 + volumeNormalized * 0.35}), 0 0 ${outerGlow}px rgba(59, 130, 246, ${0.25 + volumeNormalized * 0.3})`;
     }
 
     async function setWakeLock(active) {
@@ -289,10 +320,13 @@
     }
 
     const orb = document.getElementById('orb');
+    const orbCaption = document.getElementById('orb-caption');
     const statusText = document.getElementById('status');
     const btnConnect = document.getElementById('btnConnect');
     const btnPtt = document.getElementById('btnPtt');
     const modeRadios = document.querySelectorAll('input[name="mode"]');
+    btnConnect.setAttribute('aria-label', 'Conectar à Sofia');
+    requestAnimationFrame(animateOrb);
 
     const statusObserver = new MutationObserver(() => {
       const message = statusText.innerText.toLowerCase();
@@ -326,6 +360,10 @@
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
         await audioCtx.resume();
+        audioAnalyser = audioCtx.createAnalyser();
+        audioAnalyser.fftSize = 64;
+        frequencyData = new Uint8Array(audioAnalyser.frequencyBinCount);
+        audioAnalyser.connect(audioCtx.destination);
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${location.host}/ws/audio`);
@@ -336,8 +374,10 @@
             await setWakeLock(true);
             statusText.innerText = "Conectado. Inicializando áudio...";
             btnConnect.innerText = "Desconectar";
+            btnConnect.setAttribute('aria-label', 'Encerrar chamada com a Sofia');
             btnConnect.classList.add('is-connected');
             await iniciarMicrofone();
+            setOrbState('listening');
             btnConnect.disabled = false;
           } catch (error) {
             console.error('Não foi possível iniciar o microfone:', error);
@@ -356,7 +396,7 @@
           isAiPlaying = true;
           clearTimeout(aiPlaybackTimeout);
           aiPlaybackTimeout = null;
-          orb.className = "orb falando";
+          setOrbState('speaking');
           statusText.innerText = "Sofia falando...";
 
           const arrayBuffer = event.data;
@@ -372,7 +412,7 @@
 
           const source = audioCtx.createBufferSource();
           source.buffer = audioBuffer;
-          source.connect(audioCtx.destination);
+          source.connect(audioAnalyser);
           activeSources.push(source);
 
           source.onended = () => {
@@ -387,7 +427,7 @@
               }, 250);
             }
             if (audioCtx.currentTime >= nextPlayTime - 0.05) {
-              orb.className = "orb";
+              setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
               statusText.innerText = "Ouvindo...";
             }
           };
@@ -401,9 +441,10 @@
           setWakeLock(false);
           statusText.innerText = "Desconectado";
           btnConnect.innerText = "Conectar";
+          btnConnect.setAttribute('aria-label', 'Conectar à Sofia');
           btnConnect.classList.remove('is-connected');
           btnConnect.disabled = false;
-          orb.className = "orb";
+          setOrbState('idle');
           pararMicrofone();
           ws = null;
         };
@@ -442,15 +483,6 @@
         if (currentMode === 'ptt' && !isPttActive) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
-        if (currentMode === 'handsfree') {
-          let sumOfSquares = 0;
-          for (let i = 0; i < inputData.length; i++) {
-            sumOfSquares += inputData[i] * inputData[i];
-          }
-          const rms = Math.sqrt(sumOfSquares / inputData.length);
-          orb.style.setProperty('--voice-glow', `${Math.min(28, rms * 1200)}px`);
-          orb.className = rms < 0.005 ? 'orb' : 'orb captando';
-        }
 
         const pcm16 = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
@@ -470,10 +502,10 @@
       if (processor) processor.disconnect();
     }
 
-    btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); isPttActive = true; btnPtt.classList.add('active'); orb.className = 'orb ouvindo'; });
-    btnPtt.addEventListener('touchend', (e) => { e.preventDefault(); isPttActive = false; btnPtt.classList.remove('active'); orb.className = 'orb'; });
-    btnPtt.addEventListener('mousedown', () => { isPttActive = true; btnPtt.classList.add('active'); orb.className = 'orb ouvindo'; });
-    btnPtt.addEventListener('mouseup', () => { isPttActive = false; btnPtt.classList.remove('active'); orb.className = 'orb'; });
+    btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); isPttActive = true; btnPtt.classList.add('active'); });
+    btnPtt.addEventListener('touchend', (e) => { e.preventDefault(); isPttActive = false; btnPtt.classList.remove('active'); });
+    btnPtt.addEventListener('mousedown', () => { isPttActive = true; btnPtt.classList.add('active'); });
+    btnPtt.addEventListener('mouseup', () => { isPttActive = false; btnPtt.classList.remove('active'); });
   </script>
 </body>
 </html>
