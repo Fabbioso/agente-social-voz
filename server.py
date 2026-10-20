@@ -4,6 +4,8 @@ import json
 import sqlite3
 import re
 import socket
+import struct
+import math
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -20,6 +22,20 @@ from supabase import create_client, Client
 
 FUSO_SP = timezone(timedelta(hours=-3))
 _cache_noticias = {"timestamp": 0, "manchetes": []}
+
+
+def calcular_rms(dados_audio: bytes) -> float:
+    """Calcula o volume RMS de amostras de áudio PCM 16-bit."""
+    if not dados_audio or len(dados_audio) < 2:
+        return 0.0
+    contagem = len(dados_audio) // 2
+    formato = f"<{contagem}h"
+    try:
+        amostras = struct.unpack(formato, dados_audio[:contagem * 2])
+        soma_quadrados = sum(a * a for a in amostras)
+        return math.sqrt(soma_quadrados / contagem)
+    except Exception:
+        return 0.0
 
 
 def obter_radar_noticias():
@@ -406,6 +422,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("\n📱 [Celular] Conectado ao WebSocket!")
     sofia_emitindo_audio = False
+    LIMIAR_RMS = 450.0
+    consecutivos_voz = 0
+    ultima_interrupcao = 0.0
 
     try:
         agora_sp = datetime.now(FUSO_SP)
@@ -469,21 +488,40 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
+                nonlocal consecutivos_voz
+                audio_voz_pendente = []
                 try:
                     pacotes_recebidos = 0
                     while True:
-                        data = await websocket.receive_bytes()
+                        dados_audio = await websocket.receive_bytes()
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
-                            print(f"🎤 Recebidos {len(data)} bytes de áudio do celular", flush=True)
+                            print(f"🎤 Recebidos {len(dados_audio)} bytes de áudio do celular", flush=True)
+                        rms = calcular_rms(dados_audio)
+                        if rms < LIMIAR_RMS:
+                            consecutivos_voz = 0
+                            audio_voz_pendente.clear()
+                        else:
+                            consecutivos_voz += 1
                         if sofia_emitindo_audio:
-                            continue
-                        await session.send_realtime_input(
-                            media={
-                                "data": data,
-                                "mime_type": "audio/pcm;rate=16000",
-                            }
-                        )
+                            if rms < LIMIAR_RMS:
+                                continue
+                            audio_voz_pendente.append(dados_audio)
+                            if consecutivos_voz < 3:
+                                continue
+                            dados_para_enviar = audio_voz_pendente
+                            audio_voz_pendente = []
+                        else:
+                            consecutivos_voz = 0
+                            audio_voz_pendente.clear()
+                            dados_para_enviar = [dados_audio]
+                        for pacote_audio in dados_para_enviar:
+                            await session.send_realtime_input(
+                                media={
+                                    "data": pacote_audio,
+                                    "mime_type": "audio/pcm;rate=16000",
+                                }
+                            )
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
@@ -491,7 +529,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
-                nonlocal sofia_emitindo_audio
+                nonlocal sofia_emitindo_audio, ultima_interrupcao
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
                 fabio_turno_salvo = False
@@ -546,8 +584,12 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                             buffer_sofia_partes += part.text
 
                                 if server_content.interrupted:
-                                    print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...")
-                                    await websocket.send_text("INTERRUPT")
+                                    sofia_emitindo_audio = False
+                                    agora = time.time()
+                                    if agora - ultima_interrupcao > 0.8:
+                                        ultima_interrupcao = agora
+                                        print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...", flush=True)
+                                        await websocket.send_text("INTERRUPT")
 
                                 if model_turn is not None:
                                     for part in model_turn.parts:
