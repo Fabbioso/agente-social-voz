@@ -486,6 +486,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
+                nonlocal sofia_falando
                 try:
                     pacotes_recebidos = 0
                     while True:
@@ -494,8 +495,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(dados_audio)} bytes de áudio do celular", flush=True)
                         rms = calcular_rms(dados_audio)
-                        limiar_rms = 1200.0 if sofia_falando else 400.0
-                        if rms < limiar_rms:
+                        if sofia_falando and rms < 800.0:
                             continue
                         await session.send_realtime_input(
                             media={
@@ -506,7 +506,10 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
+                    sofia_falando = False
                     print(f"⚠️ [Erro na entrada do celular]: {e}")
+                finally:
+                    sofia_falando = False
 
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
@@ -594,7 +597,10 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
+                    sofia_falando = False
                     print(f"⚠️ [Erro na saída para o celular]: {e}")
+                finally:
+                    sofia_falando = False
 
             task_input = asyncio.create_task(client_to_gemini())
             task_output = asyncio.create_task(gemini_to_client())
@@ -611,6 +617,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"⚠️ [Erro na sessão Live]: {e}")
     finally:
+        sofia_falando = False
         print("🔌 Canal de áudio finalizado.\n")
         asyncio.create_task(extrair_e_salvar_memorias_autonomas())
 
