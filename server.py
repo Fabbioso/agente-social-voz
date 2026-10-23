@@ -500,6 +500,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
     print("\n📱 [Celular] Conectado ao WebSocket!")
     sofia_falando = False
     ultima_interrupcao = 0.0
+    inicio_fala_sofia = None
+    interrupcao_confirmada = False
 
     try:
         agora_sp = datetime.now(ZoneInfo("America/Sao_Paulo"))
@@ -564,23 +566,62 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
-                nonlocal sofia_falando
+                nonlocal sofia_falando, inicio_fala_sofia, interrupcao_confirmada
                 try:
                     pacotes_recebidos = 0
+                    inicio_processado = None
+                    quadros_acima_limiar = 0
+                    quadros_audio_pendentes = []
                     while True:
                         dados_audio = await websocket.receive_bytes()
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(dados_audio)} bytes de áudio do celular", flush=True)
                         rms = calcular_rms(dados_audio)
-                        if sofia_falando and rms < 1800.0:
-                            continue
-                        await session.send_realtime_input(
-                            media={
-                                "data": dados_audio,
-                                "mime_type": "audio/pcm;rate=16000",
-                            }
-                        )
+                        if sofia_falando:
+                            inicio_atual = inicio_fala_sofia
+                            if inicio_atual != inicio_processado:
+                                inicio_processado = inicio_atual
+                                quadros_acima_limiar = 0
+                                quadros_audio_pendentes.clear()
+                                interrupcao_confirmada = False
+
+                            if (
+                                inicio_atual is None
+                                or time.monotonic() - inicio_atual < 0.6
+                            ):
+                                quadros_acima_limiar = 0
+                                quadros_audio_pendentes.clear()
+                                continue
+
+                            if interrupcao_confirmada:
+                                quadros_acima_limiar = 0
+                                quadros_audio_pendentes.clear()
+                                quadros = [dados_audio]
+                            elif rms >= 2520.0:
+                                quadros_audio_pendentes.append(dados_audio)
+                                quadros_acima_limiar += 1
+                                if quadros_acima_limiar < 3:
+                                    continue
+                                interrupcao_confirmada = True
+                                quadros = quadros_audio_pendentes
+                                quadros_audio_pendentes = []
+                            else:
+                                quadros_acima_limiar = 0
+                                quadros_audio_pendentes.clear()
+                                continue
+                        else:
+                            quadros_acima_limiar = 0
+                            quadros_audio_pendentes.clear()
+                            quadros = [dados_audio]
+
+                        for quadro in quadros:
+                            await session.send_realtime_input(
+                                media={
+                                    "data": quadro,
+                                    "mime_type": "audio/pcm;rate=16000",
+                                }
+                            )
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
                 except Exception as e:
@@ -592,6 +633,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             async def gemini_to_client():
                 """Recebe respostas em áudio PCM 24kHz e transcrições do Gemini."""
                 nonlocal sofia_falando, ultima_interrupcao
+                nonlocal inicio_fala_sofia, interrupcao_confirmada
                 buffer_sofia = ""
                 buffer_sofia_partes = ""
                 fabio_turno_salvo = False
@@ -645,21 +687,33 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                             buffer_sofia_partes += part.text
 
                                 if server_content.interrupted:
-                                    sofia_falando = False
-                                    agora = time.time()
-                                    if agora - ultima_interrupcao > 0.8:
+                                    agora = time.monotonic()
+                                    if (
+                                        interrupcao_confirmada
+                                        and inicio_fala_sofia is not None
+                                        and agora - inicio_fala_sofia >= 0.6
+                                        and agora - ultima_interrupcao > 0.8
+                                    ):
+                                        sofia_falando = False
                                         ultima_interrupcao = agora
+                                        inicio_fala_sofia = None
+                                        interrupcao_confirmada = False
                                         print("⚡ [Sofia] Interrupção detectada! Cortando áudio no celular...", flush=True)
                                         await websocket.send_text("INTERRUPT")
 
                                 if model_turn is not None:
                                     for part in model_turn.parts:
                                         if part.inline_data and part.inline_data.data:
+                                            if not sofia_falando:
+                                                inicio_fala_sofia = time.monotonic()
+                                                interrupcao_confirmada = False
                                             sofia_falando = True
                                             await websocket.send_bytes(part.inline_data.data)
 
                                 if server_content.turn_complete:
                                     sofia_falando = False
+                                    inicio_fala_sofia = None
+                                    interrupcao_confirmada = False
                                     fabio_turno_salvo = False
                                     fabio_transcricao_buffer.clear()
                                     print("💬 [Sofia] Turno concluído.")
