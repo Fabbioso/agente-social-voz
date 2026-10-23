@@ -573,7 +573,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         if pacotes_recebidos % 50 == 0:
                             print(f"🎤 Recebidos {len(dados_audio)} bytes de áudio do celular", flush=True)
                         rms = calcular_rms(dados_audio)
-                        if sofia_falando and rms < 800.0:
+                        if sofia_falando and rms < 1800.0:
                             continue
                         await session.send_realtime_input(
                             media={
