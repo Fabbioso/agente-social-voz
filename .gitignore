@@ -3,3 +3,5 @@ cloudflared.exe
 __pycache__/
 *.pyc
 .vscode/
+memoria_sofia.db
+*.db
