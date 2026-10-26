@@ -604,8 +604,17 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             ),
         )
 
+        contexto_abertura = await obter_contexto_abertura()
+
         async with client.aio.live.connect(model=MODEL_ID, config=config_live) as session:
             print("🤖 [Gemini] Sessão Live conectada com sucesso.")
+            prompt_abertura = (
+                f"[SISTEMA: Conexão aberta. O Fabio acabou de entrar. Contexto recente: "
+                f"{contexto_abertura or 'nenhum contexto recente disponível'}. "
+                "Tome a iniciativa imediatamente: cumprimente-o casualmente e puxe "
+                "assunto sobre o que estavam conversando antes. Não espere ele falar primeiro.]"
+            )
+            await session.send(input=prompt_abertura, end_of_turn=True)
 
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
@@ -779,15 +788,6 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
             task_output = asyncio.create_task(gemini_to_client())
             task_input = asyncio.create_task(client_to_gemini())
-            contexto_abertura = await obter_contexto_abertura()
-            prompt_abertura = (
-                f"[SISTEMA: Conexão aberta. O Fabio acabou de entrar. Contexto recente: "
-                f"{contexto_abertura or 'nenhum contexto recente disponível'}. "
-                "Tome a iniciativa imediatamente: cumprimente-o de forma casual e puxe "
-                "assunto sobre esse contexto recente ou faça uma pergunta direta sobre o "
-                "que ficou pendente. Fale no máximo 2 frases e não espere ele falar primeiro.]"
-            )
-            await session.send(input=prompt_abertura, end_of_turn=True)
 
             done, pending = await asyncio.wait(
                 [task_input, task_output],
