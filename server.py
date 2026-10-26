@@ -158,6 +158,23 @@ def ler_historico_recente(limite: int = 8):
     return ler_historico_sqlite(limite)
 
 
+async def obter_contexto_abertura():
+    historico = await asyncio.to_thread(ler_historico_recente, 5)
+    itens = []
+    for speaker, texto in historico:
+        if not isinstance(texto, str):
+            continue
+        texto = texto_memoria_valido(texto)
+        if not texto:
+            continue
+        resumo = texto if len(texto) <= 180 else texto[:177].rstrip() + "..."
+        itens.append(f"- {speaker}: {resumo}")
+
+    if not itens:
+        return ""
+    return "CONTEXTO RECENTE PARA A ABERTURA:\n" + "\n".join(itens[-5:])
+
+
 async def carregar_memoria_completa():
     fatos_texto = ""
     historico_texto = ""
@@ -734,8 +751,17 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 finally:
                     sofia_falando = False
 
-            task_input = asyncio.create_task(client_to_gemini())
             task_output = asyncio.create_task(gemini_to_client())
+            task_input = asyncio.create_task(client_to_gemini())
+            contexto_abertura = await obter_contexto_abertura()
+            prompt_abertura = (
+                f"[SISTEMA: Conexão aberta. O Fabio acabou de entrar. Contexto recente: "
+                f"{contexto_abertura or 'nenhum contexto recente disponível'}. "
+                "Tome a iniciativa imediatamente: cumprimente-o de forma casual e puxe "
+                "assunto sobre esse contexto recente ou faça uma pergunta direta sobre o "
+                "que ficou pendente. Fale no máximo 2 frases e não espere ele falar primeiro.]"
+            )
+            await session.send(input=prompt_abertura, end_of_turn=True)
 
             done, pending = await asyncio.wait(
                 [task_input, task_output],
