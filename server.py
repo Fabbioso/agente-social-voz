@@ -257,10 +257,10 @@ async def salvar_mensagem_memoria(speaker: str, texto: str):
 
 
 async def extrair_e_salvar_memorias_autonomas():
-    if not supabase_client:
-        return
-
     try:
+        if not supabase_client:
+            return
+
         res_fatos = await asyncio.to_thread(
             lambda: supabase_client.table("memorias_permanentes")
             .select("id, categoria, fato")
