@@ -320,7 +320,7 @@ CRITÉRIOS:
             try:
                 resposta = await asyncio.to_thread(
                     client.models.generate_content,
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash",
                     contents=prompt_analise,
                 )
                 break
@@ -426,7 +426,8 @@ CRITÉRIOS:
                 )
 
     except Exception as e:
-        print(f"⚠️ Erro ao processar memória autônoma: {e}", flush=True)
+        print(f"⚠️ [Memória Autônoma] Erro secundário ignorado: {e}")
+        return
 
 
 def agendar_memoria_autonoma():
