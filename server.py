@@ -621,6 +621,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 "Tome a iniciativa imediatamente: cumprimente-o casualmente e puxe "
                 "assunto sobre o que estavam conversando antes. Não espere ele falar primeiro.]"
             )
+            sofia_falando = True
+            inicio_fala_sofia = time.monotonic()
             await session.send(input=prompt_abertura, end_of_turn=True)
 
             async def client_to_gemini():
@@ -647,7 +649,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                             if (
                                 inicio_atual is None
-                                or time.monotonic() - inicio_atual < 0.6
+                                or time.monotonic() - inicio_atual < 1.5
                             ):
                                 quadros_acima_limiar = 0
                                 quadros_audio_pendentes.clear()
@@ -672,6 +674,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         else:
                             quadros_acima_limiar = 0
                             quadros_audio_pendentes.clear()
+                            if rms < 500.0:
+                                continue
                             quadros = [dados_audio]
 
                         for quadro in quadros:
