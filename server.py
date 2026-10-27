@@ -674,8 +674,6 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         else:
                             quadros_acima_limiar = 0
                             quadros_audio_pendentes.clear()
-                            if rms < 500.0:
-                                continue
                             quadros = [dados_audio]
 
                         for quadro in quadros:
