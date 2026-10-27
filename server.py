@@ -674,6 +674,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                         else:
                             quadros_acima_limiar = 0
                             quadros_audio_pendentes.clear()
+                            if rms < 120.0:
+                                continue
                             quadros = [dados_audio]
 
                         for quadro in quadros:
@@ -726,23 +728,6 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                                 model_turn = server_content.model_turn
                                 if model_turn is not None:
-                                    if not fabio_turno_salvo and fabio_transcricao_buffer:
-                                        fabio_turno_salvo = True
-                                        frase_bruta = "".join(
-                                            fabio_transcricao_buffer
-                                        )
-                                        fabio_transcricao_buffer.clear()
-                                        frase_limpa = sanitizar_transcricao(frase_bruta)
-                                        if len(frase_limpa) >= 3:
-                                            print(
-                                                f"🎤 [Memória Supabase] Gravando Fabio: {frase_limpa[:70]}...",
-                                                flush=True,
-                                            )
-                                            asyncio.create_task(
-                                                salvar_mensagem_memoria(
-                                                    "Fabio", frase_limpa
-                                                )
-                                            )
                                     for part in model_turn.parts:
                                         if part.text and not getattr(part, "thought", False):
                                             buffer_sofia_partes += part.text
@@ -775,6 +760,30 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                     sofia_falando = False
                                     inicio_fala_sofia = None
                                     interrupcao_confirmada = False
+                                    if (
+                                        not fabio_turno_salvo
+                                        and fabio_transcricao_buffer
+                                    ):
+                                        fabio_turno_salvo = True
+                                        frase_bruta = "".join(
+                                            fabio_transcricao_buffer
+                                        )
+                                        frase_limpa = sanitizar_transcricao(
+                                            frase_bruta
+                                        )
+                                        letras_validas = re.findall(
+                                            r"[A-Za-zÀ-ÖØ-öø-ÿ]", frase_limpa
+                                        )
+                                        if len(letras_validas) >= 2:
+                                            print(
+                                                f"🎤 [Memória Supabase] Gravando Fabio: {frase_limpa[:70]}...",
+                                                flush=True,
+                                            )
+                                            asyncio.create_task(
+                                                salvar_mensagem_memoria(
+                                                    "Fabio", frase_limpa
+                                                )
+                                            )
                                     fabio_turno_salvo = False
                                     fabio_transcricao_buffer.clear()
                                     print("💬 [Sofia] Turno concluído.")
