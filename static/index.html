@@ -256,17 +256,17 @@
     let isAiPlaying = false;
     let nextPlayTime = 0;
     let activeSources = [];
-    let aiPlaybackTimeout = null;
     let wakeLock = null;
 
     function abortAudioQueue() {
-      const pendingSources = activeSources;
-      activeSources = [];
-      clearTimeout(aiPlaybackTimeout);
-      aiPlaybackTimeout = null;
+      if (typeof activeSources !== 'undefined' && Array.isArray(activeSources)) {
+        activeSources.forEach(source => {
+          try { source.stop(); } catch(e) {}
+        });
+        activeSources = [];
+      }
+      nextPlayTime = 0;
       isAiPlaying = false;
-      nextPlayTime = audioCtx.currentTime;
-      pendingSources.forEach(source => source.stop());
       setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
       statusText.innerText = "Ouvindo...";
     }
@@ -393,11 +393,12 @@
             return;
           }
 
-          isAiPlaying = true;
-          clearTimeout(aiPlaybackTimeout);
-          aiPlaybackTimeout = null;
-          setOrbState('speaking');
-          statusText.innerText = "Sofia falando...";
+          if (!isAiPlaying) {
+            isAiPlaying = true;
+            nextPlayTime = audioCtx.currentTime + 0.08;
+            setOrbState('speaking');
+            statusText.innerText = "Sofia falando...";
+          }
 
           const arrayBuffer = event.data;
           const sampleCount = Math.floor(arrayBuffer.byteLength / 2);
@@ -416,19 +417,14 @@
           activeSources.push(source);
 
           source.onended = () => {
-            activeSources = activeSources.filter(activeSource => activeSource !== source);
+            activeSources = activeSources.filter(s => s !== source);
             if (activeSources.length === 0) {
-              clearTimeout(aiPlaybackTimeout);
-              aiPlaybackTimeout = setTimeout(() => {
-                if (activeSources.length === 0) {
-                  isAiPlaying = false;
-                }
-                aiPlaybackTimeout = null;
-              }, 250);
-            }
-            if (audioCtx.currentTime >= nextPlayTime - 0.05) {
-              setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
-              statusText.innerText = "Ouvindo...";
+              if (audioCtx.currentTime >= nextPlayTime - 0.05) {
+                isAiPlaying = false;
+                nextPlayTime = 0;
+                setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
+                statusText.innerText = "Ouvindo...";
+              }
             }
           };
 
