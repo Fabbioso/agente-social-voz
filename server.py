@@ -320,12 +320,18 @@ CRITÉRIOS:
             try:
                 resposta = await asyncio.to_thread(
                     client.models.generate_content,
-                    model="gemini-3.8-flash",
+                    model="gemini-2.5-flash",
                     contents=prompt_analise,
                 )
                 break
-            except Exception as erro_api:
-                if "503" in str(erro_api) or "UNAVAILABLE" in str(erro_api):
+            except Exception as e:
+                erro_api = str(e)
+                if "429" in erro_api or "RESOURCE_EXHAUSTED" in erro_api:
+                    print(
+                        "[Memória Autônoma] Cota diária atingida. Operação de voz segue normalmente."
+                    )
+                    return
+                if "503" in erro_api or "UNAVAILABLE" in erro_api:
                     tempo_espera = 2 * (tentativa + 1)
                     print(
                         f"⚠️ [Memória Autônoma] Google API ocupada (503). Tentativa {tentativa + 1}/{max_tentativas}. Aguardando {tempo_espera}s...",
@@ -333,7 +339,7 @@ CRITÉRIOS:
                     )
                     await asyncio.sleep(tempo_espera)
                 else:
-                    raise erro_api
+                    raise
 
         if not resposta:
             print(
