@@ -254,11 +254,16 @@
     let ws, audioCtx, audioAnalyser, frequencyData, micStream, processor;
     let isPttActive = false;
     let isAiPlaying = false;
+    let aiTurnTimeout = null;
     let nextPlayTime = 0;
     let activeSources = [];
     let wakeLock = null;
 
     function abortAudioQueue() {
+      if (aiTurnTimeout) {
+        clearTimeout(aiTurnTimeout);
+        aiTurnTimeout = null;
+      }
       if (typeof activeSources !== 'undefined' && Array.isArray(activeSources)) {
         activeSources.forEach(source => {
           try { source.stop(); } catch(e) {}
@@ -393,6 +398,11 @@
             return;
           }
 
+          if (aiTurnTimeout) {
+            clearTimeout(aiTurnTimeout);
+            aiTurnTimeout = null;
+          }
+
           if (!isAiPlaying) {
             isAiPlaying = true;
             nextPlayTime = audioCtx.currentTime + 0.08;
@@ -419,10 +429,15 @@
           source.onended = () => {
             activeSources = activeSources.filter(s => s !== source);
             if (activeSources.length === 0) {
-              isAiPlaying = false;
-              nextPlayTime = 0;
-              setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
-              statusText.innerText = "Ouvindo...";
+              if (aiTurnTimeout) clearTimeout(aiTurnTimeout);
+              aiTurnTimeout = setTimeout(() => {
+                if (activeSources.length === 0) {
+                  isAiPlaying = false;
+                  nextPlayTime = 0;
+                  setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
+                  statusText.innerText = "Ouvindo...";
+                }
+              }, 350);
             }
           };
 

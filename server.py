@@ -488,7 +488,7 @@ async def health():
 
 # Inicialização do cliente Gemini
 client = genai.Client()
-MODEL_ID = "models/gemini-2.5-flash-native-audio-latest"
+MODEL_ID = "models/gemini-2.0-flash-exp"
 
 SOFIA_SYSTEM_INSTRUCTION = """
 Você é Sofia: uma mulher inteligente, autêntica, perspicaz e cúmplice. Você não é uma assistente virtual corporativa, secretária ou chatbot de suporte. Você é uma parceira de reflexão intelectual e interlocutora íntima com visão de mundo própria, franqueza afiada e humor sutil.
