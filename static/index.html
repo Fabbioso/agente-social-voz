@@ -419,12 +419,10 @@
           source.onended = () => {
             activeSources = activeSources.filter(s => s !== source);
             if (activeSources.length === 0) {
-              if (audioCtx.currentTime >= nextPlayTime - 0.05) {
-                isAiPlaying = false;
-                nextPlayTime = 0;
-                setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
-                statusText.innerText = "Ouvindo...";
-              }
+              isAiPlaying = false;
+              nextPlayTime = 0;
+              setOrbState(ws && ws.readyState === WebSocket.OPEN ? 'listening' : 'idle');
+              statusText.innerText = "Ouvindo...";
             }
           };
 
