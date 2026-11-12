@@ -462,8 +462,8 @@ def texto_memoria_valido(conteudo: str) -> str:
 
     conteudo = re.sub(
         r"<(?:think|thought)>.*?</(?:think|thought)>|\*\*.*|"
-        r"\[(?:monÃ³logo interno|internal monologue)\].*?"
-        r"\[/(?:monÃ³logo interno|internal monologue)\]",
+        r"\[(?:monólogo interno|internal monologue)\].*?"
+        r"\[/(?:monólogo interno|internal monologue)\]",
         "",
         conteudo,
         flags=re.IGNORECASE | re.DOTALL,
@@ -647,6 +647,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     inicio_processado = None
                     quadros_acima_limiar = 0
                     quadros_audio_pendentes = []
+                    inicio_sessao = time.monotonic()
                     while True:
                         msg = await websocket.receive()
                         if msg.get("type") == "websocket.disconnect":
@@ -656,6 +657,8 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                             continue
                         dados_audio = msg.get("bytes")
                         if not dados_audio:
+                            continue
+                        if time.monotonic() - inicio_sessao < 2.0:
                             continue
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
@@ -791,10 +794,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                                         frase_limpa = sanitizar_transcricao(
                                             frase_bruta
                                         )
-                                        letras_validas = re.findall(
-                                            r"[A-Za-zÃ€-Ã–Ã˜-Ã¶Ã¸-Ã¿]", frase_limpa
-                                        )
-                                        if len(letras_validas) >= 2:
+                                        if sum(
+                                            1 for c in frase_limpa if c.isalpha()
+                                        ) >= 2:
                                             print(
                                                 f"ðŸŽ¤ [MemÃ³ria Supabase] Gravando Fabio: {frase_limpa[:70]}...",
                                                 flush=True,

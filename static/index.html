@@ -377,8 +377,10 @@
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${location.host}/ws/audio`);
         ws.binaryType = 'arraybuffer';
+        let inicioConexao = 0;
 
         ws.onopen = async () => {
+          inicioConexao = Date.now();
           if (keepaliveInterval) clearInterval(keepaliveInterval);
           keepaliveInterval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) ws.send('PING');
@@ -472,11 +474,11 @@
           setOrbState('idle');
           pararMicrofone();
           ws = null;
-          if (!desconexaoManual) {
+          if (!desconexaoManual && Date.now() - inicioConexao > 5000) {
             statusText.innerText = "Reconectando à Sofia...";
             setTimeout(() => {
               if (!ws) btnConnect.click();
-            }, 1500);
+            }, 4000);
           }
         };
       } catch (error) {
