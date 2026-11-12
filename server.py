@@ -648,7 +648,15 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     quadros_acima_limiar = 0
                     quadros_audio_pendentes = []
                     while True:
-                        dados_audio = await websocket.receive_bytes()
+                        msg = await websocket.receive()
+                        if msg.get("type") == "websocket.disconnect":
+                            break
+                        if msg.get("text") == "PING":
+                            await websocket.send_text("PONG")
+                            continue
+                        dados_audio = msg.get("bytes")
+                        if not dados_audio:
+                            continue
                         pacotes_recebidos += 1
                         if pacotes_recebidos % 50 == 0:
                             print(f"ðŸŽ¤ Recebidos {len(dados_audio)} bytes de Ã¡udio do celular", flush=True)
@@ -701,7 +709,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     pass
                 except Exception as e:
                     sofia_falando = False
-                    print(f"âš ï¸ [Erro na entrada do celular]: {e}")
+                    print(f"âš ï¸ [Erro na entrada do celular]: {e}", flush=True)
                 finally:
                     sofia_falando = False
 
@@ -812,7 +820,7 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                     pass
                 except Exception as e:
                     sofia_falando = False
-                    print(f"âš ï¸ [Erro na saÃ­da para o celular]: {e}")
+                    print(f"âš ï¸ [Erro na saÃ­da para o celular]: {e}", flush=True)
                 finally:
                     sofia_falando = False
 
@@ -827,15 +835,15 @@ async def websocket_audio_endpoint(websocket: WebSocket):
                 t.cancel()
 
     except WebSocketDisconnect:
-        print("ðŸ“± [Celular] ConexÃ£o encerrada pelo usuÃ¡rio.")
+        print("ðŸ“± [Celular] ConexÃ£o encerrada pelo usuÃ¡rio.", flush=True)
     except Exception as e:
-        print(f"âš ï¸ [Erro na sessÃ£o Live]: {e}")
+        print(f"âš ï¸ [Erro na sessÃ£o Live]: {e}", flush=True)
         corpo_http = getattr(getattr(e, "response", None), "body", None)
         if corpo_http:
-            print(f"ðŸ”Ž [Live Diag Body]: {corpo_http.decode('utf-8', errors='ignore')}")
+            print(f"ðŸ”Ž [Live Diag Body]: {corpo_http.decode('utf-8', errors='ignore')}", flush=True)
     finally:
         sofia_falando = False
-        print("ðŸ”Œ Canal de Ã¡udio finalizado.\n")
+        print("ðŸ”Œ Canal de Ã¡udio finalizado.\n", flush=True)
         agendar_memoria_autonoma()
 
 

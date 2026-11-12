@@ -252,6 +252,7 @@
     }
 
     let ws, audioCtx, audioAnalyser, frequencyData, micStream, processor;
+    let micCtx = null, micSource = null, keepaliveInterval = null, desconexaoManual = false;
     let isPttActive = false;
     let isAiPlaying = false;
     let aiTurnTimeout = null;
@@ -358,9 +359,12 @@
       btnConnect.disabled = true;
 
       if (ws) {
+        desconexaoManual = true;
         ws.close();
         return;
       }
+
+      desconexaoManual = false;
 
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
@@ -375,6 +379,11 @@
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = async () => {
+          if (keepaliveInterval) clearInterval(keepaliveInterval);
+          keepaliveInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send('PING');
+          }, 20000);
+
           try {
             await setWakeLock(true);
             statusText.innerText = "Conectado. Inicializando áudio...";
@@ -392,9 +401,11 @@
         };
 
         ws.onmessage = async (event) => {
-          if (typeof event.data === 'string' && event.data === 'INTERRUPT') {
-            isAiPlaying = false;
-            abortAudioQueue();
+          if (typeof event.data === 'string') {
+            if (event.data === 'INTERRUPT') {
+              isAiPlaying = false;
+              abortAudioQueue();
+            }
             return;
           }
 
@@ -446,7 +457,12 @@
           nextPlayTime = startTime + audioBuffer.duration;
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+          console.warn('WebSocket fechado:', event.code, event.reason);
+          if (keepaliveInterval) {
+            clearInterval(keepaliveInterval);
+            keepaliveInterval = null;
+          }
           setWakeLock(false);
           statusText.innerText = "Desconectado";
           btnConnect.innerText = "Conectar";
@@ -456,6 +472,12 @@
           setOrbState('idle');
           pararMicrofone();
           ws = null;
+          if (!desconexaoManual) {
+            statusText.innerText = "Reconectando à Sofia...";
+            setTimeout(() => {
+              if (!ws) btnConnect.click();
+            }, 1500);
+          }
         };
       } catch (error) {
         console.error('Não foi possível conectar:', error);
@@ -476,8 +498,8 @@
       };
       micStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
 
-      const micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-      const source = micCtx.createMediaStreamSource(micStream);
+      micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      micSource = micCtx.createMediaStreamSource(micStream);
       processor = micCtx.createScriptProcessor(2048, 1, 1);
 
       processor.onaudioprocess = (e) => {
@@ -501,7 +523,7 @@
         ws.send(pcm16.buffer);
       };
 
-      source.connect(processor);
+      micSource.connect(processor);
       processor.connect(micCtx.destination);
       statusText.innerText = "Pronto! Pode falar com a Sofia.";
     }
@@ -509,6 +531,10 @@
     function pararMicrofone() {
       if (micStream) micStream.getTracks().forEach(t => t.stop());
       if (processor) processor.disconnect();
+      if (micSource) micSource.disconnect();
+      if (micCtx && micCtx.state !== 'closed') micCtx.close();
+      micSource = null;
+      micCtx = null;
     }
 
     btnPtt.addEventListener('touchstart', (e) => { e.preventDefault(); isPttActive = true; btnPtt.classList.add('active'); });
