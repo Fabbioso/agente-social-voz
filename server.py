@@ -613,6 +613,14 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
         contexto_abertura = await obter_contexto_abertura()
 
+        chave_ativa = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+        print(
+            f"🔎 [Live Diag] sdk={genai.__version__} | "
+            f"vertexai={client._api_client.vertexai} | "
+            f"api_version={client._api_client.api_version} | "
+            f"key_len={len(chave_ativa)}"
+        )
+
         async with client.aio.live.connect(model=MODEL_ID, config=config_live) as session:
             print("🤖 [Gemini] Sessão Live conectada com sucesso.")
             prompt_abertura = (
@@ -822,6 +830,9 @@ async def websocket_audio_endpoint(websocket: WebSocket):
         print("📱 [Celular] Conexão encerrada pelo usuário.")
     except Exception as e:
         print(f"⚠️ [Erro na sessão Live]: {e}")
+        corpo_http = getattr(getattr(e, "response", None), "body", None)
+        if corpo_http:
+            print(f"🔎 [Live Diag Body]: {corpo_http.decode('utf-8', errors='ignore')}")
     finally:
         sofia_falando = False
         print("🔌 Canal de áudio finalizado.\n")
