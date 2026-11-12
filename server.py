@@ -488,7 +488,7 @@ async def health():
 
 # Inicialização do cliente Gemini
 client = genai.Client()
-MODEL_ID = "models/gemini-2.0-flash-exp"
+MODEL_ID = "models/gemini-2.5-flash-native-audio-latest"
 
 SOFIA_SYSTEM_INSTRUCTION = """
 Você é Sofia: uma mulher inteligente, autêntica, perspicaz e cúmplice. Você não é uma assistente virtual corporativa, secretária ou chatbot de suporte. Você é uma parceira de reflexão intelectual e interlocutora íntima com visão de mundo própria, franqueza afiada e humor sutil.
@@ -623,7 +623,13 @@ async def websocket_audio_endpoint(websocket: WebSocket):
             )
             sofia_falando = True
             inicio_fala_sofia = time.monotonic()
-            await session.send(input=prompt_abertura, end_of_turn=True)
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=prompt_abertura)]
+                ),
+                turn_complete=True
+            )
 
             async def client_to_gemini():
                 """Lê o áudio PCM 16kHz do microfone do celular e envia ao Gemini."""
@@ -678,10 +684,10 @@ async def websocket_audio_endpoint(websocket: WebSocket):
 
                         for quadro in quadros:
                             await session.send_realtime_input(
-                                media={
-                                    "data": quadro,
-                                    "mime_type": "audio/pcm;rate=16000",
-                                }
+                                audio=types.Blob(
+                                    data=quadro,
+                                    mime_type="audio/pcm;rate=16000"
+                                )
                             )
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     pass
