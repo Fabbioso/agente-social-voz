@@ -614,11 +614,11 @@ async def websocket_audio_endpoint(websocket: WebSocket):
         contexto_abertura = await obter_contexto_abertura()
 
         chave_ativa = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+        http_opts = getattr(client._api_client, "_http_options", None)
+        api_ver = getattr(http_opts, "api_version", None)
         print(
-            f"🔎 [Live Diag] sdk={genai.__version__} | "
-            f"vertexai={client._api_client.vertexai} | "
-            f"api_version={client._api_client.api_version} | "
-            f"key_len={len(chave_ativa)}"
+            f"🔎 [Live Diag] sdk={genai.__version__} | api_version={api_ver} | "
+            f"key_len={len(chave_ativa)} | key_prefix={chave_ativa[:6]}"
         )
 
         async with client.aio.live.connect(model=MODEL_ID, config=config_live) as session:
