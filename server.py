@@ -1,5 +1,6 @@
 import os
 import asyncio
+import hmac
 import json
 import sqlite3
 import re
@@ -14,7 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from contextlib import closing
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from google import genai
@@ -160,7 +161,47 @@ def ler_historico_recente(limite: int = 8):
 
 
 async def obter_contexto_abertura():
-    historico = await asyncio.to_thread(ler_historico_recente, 5)
+    blocos = []
+
+    if supabase_client:
+        try:
+            res_clima = await asyncio.to_thread(
+                lambda: supabase_client.table("memorias_permanentes")
+                .select("fato")
+                .eq("categoria", "clima_emocional")
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if res_clima.data and res_clima.data[0].get("fato"):
+                blocos.append(
+                    f"CLIMA EMOCIONAL RECENTE:\n- {res_clima.data[0]['fato']}"
+                )
+        except Exception as e:
+            print(f"⚠️ [Abertura] Erro ao buscar clima_emocional: {e}", flush=True)
+
+        try:
+            res_diario = await asyncio.to_thread(
+                lambda: supabase_client.table("memorias_permanentes")
+                .select("fato")
+                .eq("categoria", "diário analítico")
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if res_diario.data and res_diario.data[0].get("fato"):
+                blocos.append(
+                    f"GANCHO MAIS RECENTE DO DIÁRIO:\n- {res_diario.data[0]['fato']}"
+                )
+        except Exception as e:
+            print(f"⚠️ [Abertura] Erro ao buscar diário analítico: {e}", flush=True)
+
+    try:
+        historico = await asyncio.to_thread(ler_historico_recente, 5)
+    except Exception as e:
+        print(f"⚠️ [Abertura] Erro ao buscar histórico recente: {e}", flush=True)
+        historico = []
+
     itens = []
     for speaker, texto in historico:
         if not isinstance(texto, str):
@@ -171,9 +212,10 @@ async def obter_contexto_abertura():
         resumo = texto if len(texto) <= 180 else texto[:177].rstrip() + "..."
         itens.append(f"- {speaker}: {resumo}")
 
-    if not itens:
-        return ""
-    return "CONTEXTO RECENTE PARA A ABERTURA:\n" + "\n".join(itens[-5:])
+    if itens:
+        blocos.append("ÚLTIMOS TURNOS DA CONVERSA:\n" + "\n".join(itens[-5:]))
+
+    return "\n\n".join(blocos)
 
 
 async def carregar_memoria_completa():
@@ -569,6 +611,18 @@ async def get_index():
 @app.get("/health")
 async def health():
     return {"status": "online", "agente": "Sofia"}
+
+
+@app.get("/cron/diario")
+async def cron_diario(token: str = ""):
+    segredo_esperado = os.environ.get("CRON_SECRET", "").strip() or SUPABASE_KEY[:16]
+    if not segredo_esperado or not hmac.compare_digest(token, segredo_esperado):
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    from diario_noturno import executar_diario_noturno
+
+    asyncio.create_task(asyncio.to_thread(executar_diario_noturno))
+    return {"status": "agendado", "tarefa": "diario_noturno"}
 
 
 # Inicialização do cliente Gemini

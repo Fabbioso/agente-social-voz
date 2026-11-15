@@ -1,29 +1,28 @@
-name: Diário Analítico Noturno da Sofia
+name: Diário Noturno da Sofia
 
 on:
   schedule:
-    # 02:30 UTC = 23:30 no Horário de Brasília (UTC-3)
-    - cron: '30 2 * * *'
-  workflow_dispatch: # Permite disparar manualmente pelo botão no GitHub
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 jobs:
   executar-diario:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Baixar código do repositório
+      - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Configurar ambiente Python
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Instalar dependências
         run: |
-          pip install google-genai supabase python-dotenv
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Executar Diário Analítico
+      - name: Executar diário noturno
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

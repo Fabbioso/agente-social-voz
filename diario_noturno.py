@@ -32,6 +32,25 @@ def executar_diario_noturno():
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
+    # 0. Verificação de idempotência para a data de hoje (America/Sao_Paulo)
+    data_sp = datetime.datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
+    prefixo_hoje = f"[{data_sp}]"
+    try:
+        resp_existente = supabase.table("memorias_permanentes")\
+            .select("id, fato")\
+            .eq("categoria", "diário analítico")\
+            .order("id", desc=True)\
+            .limit(20)\
+            .execute()
+        if any(
+            (item.get("fato") or "").strip().startswith(prefixo_hoje)
+            for item in (resp_existente.data or [])
+        ):
+            print(f"ℹ️ Diário analítico de hoje ({data_sp}) já consolidado. Encerrando sem duplicar.")
+            return
+    except Exception as e:
+        print(f"⚠️ Erro ao verificar idempotência do diário: {e}")
+
     # 1. Buscar diálogos das últimas 24h
     limite_tempo = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).isoformat()
 
