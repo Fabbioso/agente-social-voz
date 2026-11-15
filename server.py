@@ -177,24 +177,57 @@ async def obter_contexto_abertura():
 
 
 async def carregar_memoria_completa():
-    fatos_texto = ""
+    fatos_fabio_texto = ""
+    fatos_relacionais_texto = ""
+    diario_texto = ""
     historico_texto = ""
 
     if supabase_client:
         try:
             res_fatos = await asyncio.to_thread(
                 lambda: supabase_client.table("memorias_permanentes")
-                .select("categoria, fato")
+                .select("id, categoria, fato")
+                .order("id", desc=False)
                 .execute()
             )
             if res_fatos.data:
-                linhas_fatos = [
-                    f"- [{item['categoria']}]: {item['fato']}"
-                    for item in res_fatos.data
-                ]
-                fatos_texto = "\n".join(linhas_fatos)
+                categorias_fabio = {"perfil", "rotina", "preferencias", "projetos"}
+                categorias_relacionais = {
+                    "clima_emocional",
+                    "vinculo_e_codigos",
+                    "posicoes_sofia",
+                }
+
+                linhas_fabio = []
+                linhas_relacionais = []
+                itens_diario = []
+
+                for item in res_fatos.data:
+                    cat = item.get("categoria")
+                    fato = item.get("fato")
+                    if not fato:
+                        continue
+                    if cat in categorias_fabio:
+                        linhas_fabio.append(f"- [{cat}]: {fato}")
+                    elif cat in categorias_relacionais:
+                        linhas_relacionais.append(f"- [{cat}]: {fato}")
+                    elif cat == "diário analítico":
+                        itens_diario.append(item)
+
+                fatos_fabio_texto = "\n".join(linhas_fabio)
+                fatos_relacionais_texto = "\n".join(linhas_relacionais)
+
+                recentes_diario = sorted(
+                    itens_diario,
+                    key=lambda x: x.get("id") or 0,
+                    reverse=True,
+                )[:6]
+                recentes_diario.reverse()
+                diario_texto = "\n".join(f"- {item['fato']}" for item in recentes_diario)
+
                 print(
-                    f"🧠 [Memória Permanente] Carregados {len(res_fatos.data)} fatos consolidados.",
+                    f"🧠 [Memória Permanente] Carregados {len(linhas_fabio)} fatos do Fábio, "
+                    f"{len(linhas_relacionais)} registros relacionais e {len(recentes_diario)} do diário.",
                     flush=True,
                 )
         except Exception as e:
@@ -226,9 +259,17 @@ async def carregar_memoria_completa():
             )
 
     contexto_inicial = ""
-    if fatos_texto:
+    if fatos_fabio_texto:
         contexto_inicial += (
-            f"\n\nFATOS PERMANENTES QUE VOCÊ SABE SOBRE O FÁBIO:\n{fatos_texto}"
+            f"\n\nO QUE VOCÊ SABE SOBRE O FÁBIO:\n{fatos_fabio_texto}"
+        )
+    if fatos_relacionais_texto:
+        contexto_inicial += (
+            f"\n\nVÍNCULO, CLIMA E SUAS POSIÇÕES:\n{fatos_relacionais_texto}"
+        )
+    if diario_texto:
+        contexto_inicial += (
+            f"\n\nREFLEXÕES E GANCHOS RECENTES DO DIÁRIO:\n{diario_texto}"
         )
     if historico_texto:
         contexto_inicial += (
@@ -288,28 +329,34 @@ async def extrair_e_salvar_memorias_autonomas():
         )
 
         prompt_analise = f"""
-Você é o módulo de síntese de memória de longo prazo da Sofia.
-Compare a conversa recente entre o Fábio e a Sofia com os fatos permanentes atuais, para identificar fatos novos, alterações ou fatos que deixaram de ser verdadeiros.
+Você é o módulo de síntese de memória de longo prazo e continuidade relacional da Sofia.
+Compare a conversa recente entre o Fábio e a Sofia com os registros atuais, para identificar fatos novos, alterações, nuances relacionais ou fatos que deixaram de ser verdadeiros.
 
 CONVERSA RECENTE:
 {dialogo}
 
-FATOS PERMANENTES ATUAIS (use os IDs para atualizar ou remover o fato correto):
+REGISTROS PERMANENTES ATUAIS (use os IDs para atualizar ou remover o registro correto):
 {fatos_existentes_txt}
 
 CRITÉRIOS:
-- Extraia apenas fatos consistentes e duradouros. Ignore gentilezas, saudações, piadas pontuais e assuntos passageiros.
+- Extraia fatos consistentes e duradouros sobre o Fábio E nuances relacionais relevantes entre ele e a Sofia. Ignore saudações genéricas e trivialidades sem valor factual ou afetivo.
+- Seja natural, conciso e objetivo, sem inventar fatos e evitando duplicatas.
 - Retorne EXCLUSIVAMENTE um array JSON puro. Cada item deve ter exatamente os campos "acao", "id", "categoria" e "fato":
 [
   {{"acao": "INSERIR", "id": null, "categoria": "preferencias", "fato": "Descrição clara e objetiva em terceira pessoa"}},
-  {{"acao": "ATUALIZAR", "id": 123, "categoria": "rotina", "fato": "Descrição atualizada em terceira pessoa"}},
+  {{"acao": "ATUALIZAR", "id": 123, "categoria": "clima_emocional", "fato": "Descrição atualizada do estado emocional recente"}},
   {{"acao": "REMOVER", "id": 123, "categoria": "perfil", "fato": null}}
 ]
 - "acao" deve ser "INSERIR", "ATUALIZAR" ou "REMOVER".
-- Para INSERIR, use "id": null e uma categoria entre "rotina", "preferencias", "perfil" e "projetos".
-- Para ATUALIZAR ou REMOVER, use o ID numérico do fato atual correspondente. Não invente IDs.
+- Categorias permitidas:
+  - "rotina", "preferencias", "perfil", "projetos": fatos objetivos e duradouros sobre o Fábio.
+  - "clima_emocional": como o Fábio estava se sentindo e o tom afetivo em que a última conversa terminou (mantenha apenas 1 ou 2 registros ativos, usando ATUALIZAR sempre que o estado emocional mudar).
+  - "vinculo_e_codigos": piadas internas, expressões recorrentes, apelidos ou referências compartilhadas entre Fábio e Sofia.
+  - "posicoes_sofia": opiniões, gostos ou posturas que a própria Sofia já sustentou na conversa, para manter coerência ao longo do tempo.
+- Para INSERIR, use "id": null e uma das categorias permitidas acima.
+- Para ATUALIZAR ou REMOVER, use o ID numérico do registro atual correspondente. Não invente IDs. Nunca altere ou remova registros de "diário analítico".
 - Para ATUALIZAR, informe a categoria e o fato revisados; para REMOVER, use "fato": null.
-- Não duplique fatos existentes: atualize o fato existente se ele mudou e remova-o apenas se a conversa indicar que deixou de ser válido.
+- Não duplique registros existentes: atualize o registro correspondente se algo mudou e remova-o apenas se a conversa indicar que deixou de ser válido.
 - Se nada tiver mudado ou for irrelevante, retorne exatamente: []
 - Não use blocos de formatação markdown (sem ```json).
 """
@@ -397,7 +444,15 @@ CRITÉRIOS:
             for item in fatos_existentes
             if isinstance(item.get("id"), int) and not isinstance(item.get("id"), bool)
         }
-        categorias_validas = {"rotina", "preferencias", "perfil", "projetos"}
+        categorias_validas = {
+            "rotina",
+            "preferencias",
+            "perfil",
+            "projetos",
+            "clima_emocional",
+            "vinculo_e_codigos",
+            "posicoes_sofia",
+        }
 
         for item in itens:
             if not isinstance(item, dict):

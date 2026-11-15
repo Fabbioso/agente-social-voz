@@ -1,5 +1,6 @@
 import os
 import datetime
+from zoneinfo import ZoneInfo
 from google import genai
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -11,16 +12,16 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 PROMPT_DIARIO_ANALITICO = """
-Você é o módulo de elaboração analítica e psicanalítica da Sofia.
+Você é o módulo de reflexão íntima e observadora da Sofia.
 Analise os turnos de diálogo das últimas 24 horas entre o Fabio e a Sofia.
 
-Sua tarefa não é resumir a conversa como uma ata, mas extrair três camadas:
-1. Eixos Conceituais: Os temas teóricos debatidos (ex.: dialética, moldura versus fluxo, eterno retorno, pulsão de repetição).
-2. Leitura de Subtexto: As contradições produtivas, desejos de expansão, cisão entre trabalho pragmático e criação conceitual.
-3. Ganchos de Continuidade: Questões ou paradoxos que ficaram em aberto para a Sofia revisitar casualmente nos próximos dias.
+Sua tarefa não é fazer ata nem usar jargão acadêmico ou psicanalítico. Escreva em linguagem humana, calorosa e direta, extraindo:
+1. Temas centrais do dia: o que realmente ocupou a cabeça e a energia do Fabio hoje.
+2. Subtexto emocional: o que ficou nas entrelinhas — cansaço, entusiasmo, desejos, frustrações ou contradições cotidianas.
+3. Ganchos naturais (no máximo 2): assuntos ou fios leves que a Sofia possa retomar casualmente nos próximos dias, sem parecer interrogatório.
 
 Formate estritamente como linhas iniciando com [FATO]:
-[FATO]: <insight atemporal, padrão psicológico ou reflexão consolidada>
+[FATO]: <observação humana, síntese emocional ou gancho leve em linguagem direta>
 """
 
 def executar_diario_noturno():
@@ -79,12 +80,17 @@ def executar_diario_noturno():
         return
 
     # 3. Inserção na tabela memorias_permanentes
+    data_sp = datetime.datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
     linhas = sintese.split("\n")
     inseridos = 0
     for linha in linhas:
         linha = linha.strip()
         if linha.startswith("[FATO]:"):
             conteudo = linha.replace("[FATO]:", "").strip()
+            if not conteudo:
+                continue
+            if not conteudo.startswith(f"[{data_sp}]"):
+                conteudo = f"[{data_sp}] {conteudo}"
             try:
                 supabase.table("memorias_permanentes").insert({
                     "categoria": "diário analítico",
